@@ -1,64 +1,37 @@
 /************************ 
  * Simple_Test *
- * 参考 terrain_painter.js 实现
+ * 最简单的在线实验测试脚本
+ * 仅用 PsychoJS 进行数据存储
  ************************/
 
-import { core, data, sound, util, visual, hardware } from './lib/psychojs-2025.2.4.js';
+import { core, util } from './lib/psychojs-2025.2.4.js';
 const { PsychoJS } = core;
-const { TrialHandler, MultiStairHandler } = data;
-const { Scheduler } = util;
 
-// store info about the experiment session:
+// 实验信息
 let expName = 'simple_test';
 let expInfo = {
     'participant': `${util.pad(Number.parseFloat(util.randint(0, 999999)).toFixed(0), 6)}`,
     'session': '001',
 };
-let PILOTING = util.getUrlParameters().has('__pilotToken');
 
-// init psychoJS:
+// 初始化 PsychoJS（仅用于数据存储，不使用屏幕窗口）
 const psychoJS = new PsychoJS({
   debug: true
 });
 
-// open window:
-psychoJS.openWindow({
-  fullscr: false,
-  color: new util.Color([0,0,0]),
-  units: 'height',
-  waitBlanking: true,
-  backgroundImage: '',
-  backgroundFit: 'none',
-});
-
-// schedule the experiment:
-psychoJS.schedule(psychoJS.gui.DlgFromDict({
-  dictionary: expInfo,
-  title: expName
-}));
-
-const flowScheduler = new Scheduler(psychoJS);
-const dialogCancelScheduler = new Scheduler(psychoJS);
-psychoJS.scheduleCondition(function() { return (psychoJS.gui.dialogComponent.button === 'OK'); },flowScheduler, dialogCancelScheduler);
-
-// flowScheduler gets run if the participants presses OK
-flowScheduler.add(updateInfo);
-flowScheduler.add(experimentInit);
-flowScheduler.add(trialRoutineBegin());
-flowScheduler.add(trialRoutineEachFrame());
-flowScheduler.add(trialRoutineEnd());
-flowScheduler.add(quitPsychoJS, 'Thank you for your patience.', true);
-
-// quit if user presses Cancel in dialog box:
-dialogCancelScheduler.add(quitPsychoJS, 'Thank you for your patience.', false);
-
+// 启动 PsychoJS（用于数据记录和Pavlovia通信）
 psychoJS.start({
   expName: expName,
   expInfo: expInfo,
   resources: []
 });
 
-psychoJS.experimentLogger.setLevel(core.Logger.ServerLevel.INFO);
+// 设置数据文件路径和格式
+expInfo['date'] = util.MonotonicClock.getDateStr();
+expInfo['expName'] = expName;
+expInfo['OS'] = window.navigator.platform;
+psychoJS.experiment.dataFileName = (("." + "/") + `data/${expInfo["participant"]}_${expName}_${expInfo["date"]}`);
+psychoJS.experiment.field_separator = '\t';
 
 // 绘制相关变量
 let canvas, ctx;
@@ -72,82 +45,18 @@ let mouseX = 0;
 let mouseY = 0;
 let showBrushPreview = true;
 let experimentSubmitted = false;
-let inDrawingPhase = false;
 let lastClickTime = 0;
 let clickTimeout = null;
 
-var currentLoop;
-var frameDur;
-var trialClock;
-var globalClock;
-var routineTimer;
-
-async function updateInfo() {
-  currentLoop = psychoJS.experiment;
-  expInfo['date'] = util.MonotonicClock.getDateStr();
-  expInfo['expName'] = expName;
-  expInfo['psychopyVersion'] = '2025.2.4';
-  expInfo['OS'] = window.navigator.platform;
-
-  expInfo['frameRate'] = psychoJS.window.getActualFrameRate();
-  if (typeof expInfo['frameRate'] !== 'undefined')
-    frameDur = 1.0 / Math.round(expInfo['frameRate']);
-  else
-    frameDur = 1.0 / 60.0;
-
-  util.addInfoFromUrl(expInfo);
-  
-  psychoJS.experiment.dataFileName = (("." + "/") + `data/${expInfo["participant"]}_${expName}_${expInfo["date"]}`);
-  psychoJS.experiment.field_separator = '\t';
-
-  return Scheduler.Event.NEXT;
-}
-
-async function experimentInit() {
-  trialClock = new util.Clock();
-  globalClock = new util.Clock();
-  routineTimer = new util.CountdownTimer();
-  
-  // 初始化绘制界面
-  initDrawingInterface();
-  
-  return Scheduler.Event.NEXT;
-}
-
-function trialRoutineBegin(snapshot) {
-  return async function () {
-    showParticipantForm();
-    return Scheduler.Event.NEXT;
+// 页面加载完成后初始化
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('📄 页面加载完成，PsychoJS 已初始化');
+  // 初始化Canvas事件监听
+  const canvas = document.getElementById('drawingCanvas');
+  if (canvas) {
+    initDrawingInterface();
   }
-}
-
-function trialRoutineEachFrame() {
-  return async function () {
-    return Scheduler.Event.NEXT;
-  };
-}
-
-function trialRoutineEnd(snapshot) {
-  return async function () {
-    return Scheduler.Event.NEXT;
-  }
-}
-
-async function quitPsychoJS(message, isCompleted) {
-  if (psychoJS.experiment.isEntryEmpty()) {
-    psychoJS.experiment.nextEntry();
-  }
-  psychoJS.window.close();
-  psychoJS.quit({message: message, isCompleted: isCompleted});
-  
-  return Scheduler.Event.QUIT;
-}
-
-// 显示被试信息表单
-function showParticipantForm() {
-  const root = document.getElementById('root');
-  if (root) root.style.display = 'block';
-}
+});
 
 // 提交被试信息
 function submitInfo() {
@@ -269,7 +178,6 @@ function startDrawingTask() {
   if (instructionPage) instructionPage.style.display = 'none';
   if (drawingInterface) drawingInterface.style.display = 'block';
   
-  inDrawingPhase = true;
   experimentSubmitted = false;
   
   resizeCanvas();
@@ -559,11 +467,6 @@ function showCompletionPage() {
   if (completionPage) completionPage.style.display = 'flex';
   
   console.log('✅ 实验完成，显示完成页面');
-  
-  // 5 秒后结束实验
-  setTimeout(() => {
-    psychoJS.quit('Thank you for your patience.', true);
-  }, 5000);
 }
 
 // 导出全局函数
