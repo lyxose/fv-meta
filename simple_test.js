@@ -430,7 +430,6 @@ async function confirmDrawing() {
   }
   
   experimentSubmitted = true;
-  inDrawingPhase = false;
   
   console.log('✏️ 绘制完成，保存数据...');
   
