@@ -93,23 +93,29 @@ function submitInfo() {
 
 // 保存数据函数（模拟）
 function saveData() {
-  // 在真实的 Pavlovia 实验中，这里会调用 PsychoJS 的数据保存方法
-  // 例如：psychoJS.experiment.save({...})
-  
-  // 这里我们只是将数据保存到 localStorage 作为演示
-  const dataKey = `exp_${experimentData.participantInfo.id}_${Date.now()}`;
-  
-  try {
-    localStorage.setItem(dataKey, JSON.stringify(experimentData));
-    console.log('数据已保存到本地存储，键名：', dataKey);
-    
-    // 也可以生成 CSV 格式的数据
-    const csvData = generateCSV();
-    console.log('CSV 格式数据：\n', csvData);
-    
-  } catch (error) {
-    console.error('保存数据时出错：', error);
-  }
+  // 生成 CSV 格式的数据
+  const csvData = generateCSV();
+  const fileName = `exp_data_${experimentData.participantInfo.id}.csv`;
+  // 创建一个Blob对象
+  const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+  // 创建FormData用于发送文件
+  const formData = new FormData();
+  formData.append('file', blob, fileName);
+  // 发送到服务器的/data路径下（需要后端支持）
+  fetch('/data/' + fileName, {
+    method: 'POST',
+    body: formData
+  })
+    .then(response => {
+      if (response.ok) {
+        console.log('CSV数据已保存到/data路径下，文件名：', fileName);
+      } else {
+        console.error('保存CSV数据到/data路径时出错');
+      }
+    })
+    .catch(error => {
+      console.error('保存CSV数据时发生异常：', error);
+    });
 }
 
 // 生成 CSV 格式数据
