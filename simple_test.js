@@ -57,22 +57,22 @@ function pad(num, len) {
 async function initPsychoJS() {
   console.log('开始初始化 PsychoJS...');
   
-  // 等待 PsychoJS 库加载（最多等待 3 秒）
-  let retries = 0;
-  while (typeof PsychoJS === 'undefined' && retries < 30) {
-    await new Promise(resolve => setTimeout(resolve, 100));
-    retries++;
-  }
+// 等待 PsychoJS 库加载（最多等待 3 秒）
+//   let retries = 0;
+//   while (typeof PsychoJS === 'undefined' && retries < 30) {
+//     await new Promise(resolve => setTimeout(resolve, 100));
+//     retries++;
+//   }
   
-  if (typeof PsychoJS === 'undefined') {
-    console.warn('⚠️  PsychoJS 库加载超时，使用本地存储模式');
-    psychoJS = null;
-    return false;
-  }
+//   if (typeof PsychoJS === 'undefined') {
+//     console.warn('⚠️  PsychoJS 库加载超时，使用本地存储模式');
+//     psychoJS = null;
+//     return false;
+//   }
   
   try {
     // 创建 PsychoJS 实例
-    psychoJS = new PsychoJS({
+    const psychoJS = new PsychoJS({
       debug: true
     });
     
