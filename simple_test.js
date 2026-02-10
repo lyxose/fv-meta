@@ -34,26 +34,38 @@ let mouseX = 0;
 let mouseY = 0;
 let showBrushPreview = true;
 
+// 实验状态控制
+let experimentSubmitted = false;  // 防止重复提交
+let inDrawingPhase = false;  // 是否在绘制阶段
+
 // 初始化 PsychoJS
 function initPsychoJS() {
-  psychoJS = new PsychoJS({
-    debug: true
-  });
-  
-  // 设置实验名称和数据文件路径
-  psychoJS.setRedirectUrls(
-    'https://pavlovia.org',  // 完成后跳转
-    'https://pavlovia.org'   // 取消后跳转
-  );
-  
-  // 开始实验
-  psychoJS.start({
-    expName: experimentData.expName,
-    expInfo: expInfo,
-    resources: []
-  });
-  
-  console.log('PsychoJS 初始化完成');
+  try {
+    psychoJS = new PsychoJS({
+      debug: true
+    });
+    
+    // 设置实验名称和数据文件路径
+    psychoJS.setRedirectUrls(
+      'https://pavlovia.org',  // 完成后跳转
+      'https://pavlovia.org'   // 取消后跳转
+    );
+    
+    // 开始实验
+    psychoJS.start({
+      expName: experimentData.expName,
+      expInfo: expInfo,
+      resources: []
+    }).then(() => {
+      console.log('PsychoJS 启动成功');
+    }).catch((error) => {
+      console.error('PsychoJS 启动失败:', error);
+    });
+    
+    console.log('PsychoJS 初始化完成');
+  } catch (error) {
+    console.error('PsychoJS 初始化错误:', error);
+  }
 }
 
 // 页面加载完成后初始化
@@ -81,13 +93,6 @@ document.addEventListener('DOMContentLoaded', function() {
   // 初始化绘制界面（延迟初始化，确保 DOM 完全加载）
   setTimeout(() => {
     initDrawingInterface();
-    // 检测移动设备
-    if (isMobileDevice()) {
-      const mobileControls = document.getElementById('mobileControls');
-      const mobileInstructions = document.getElementById('mobileInstructions');
-      if (mobileControls) mobileControls.style.display = 'flex';
-      if (mobileInstructions) mobileInstructions.style.display = 'inline';
-    }
   }, 100);
 });
 
@@ -152,17 +157,39 @@ function submitInfo() {
     被试编号：${participantId}<br>
     姓名：${participantName}<br>
     年龄：${participantAge}<br><br>
-    即将进入绘制界面...
+    即将显示实验说明...
   `;
   
   // 禁用输入框和按钮
   document.querySelectorAll('input').forEach(input => input.disabled = true);
   document.querySelector('button').disabled = true;
   
-  // 2秒后进入绘制界面
+  // 2秒后显示实验说明页
   setTimeout(() => {
-    startDrawingTask();
+    showInstructionPage();
   }, 2000);
+}
+
+// 显示实验说明页
+function showInstructionPage() {
+  const root = document.getElementById('root');
+  const instructionPage = document.getElementById('instructionPage');
+  
+  if (root) root.style.display = 'none';
+  if (instructionPage) {
+    instructionPage.style.display = 'flex';
+  }
+  
+  console.log('显示实验说明页');
+}
+
+// 从说明页开始实验
+function startFromInstructions() {
+  const instructionPage = document.getElementById('instructionPage');
+  if (instructionPage) {
+    instructionPage.style.display = 'none';
+  }
+  startDrawingTask();
 }
 
 // 保存被试信息到 Pavlovia
@@ -245,10 +272,16 @@ function initColorMatrix() {
 // 开始绘制任务
 function startDrawingTask() {
   const root = document.getElementById('root');
+  const instructionPage = document.getElementById('instructionPage');
   const drawingInterface = document.getElementById('drawingInterface');
   
   if (root) root.style.display = 'none';
+  if (instructionPage) instructionPage.style.display = 'none';
   if (drawingInterface) drawingInterface.style.display = 'block';
+  
+  // 设置实验状态
+  inDrawingPhase = true;
+  experimentSubmitted = false;
   
   // 重新设置画布大小
   resizeCanvas();
@@ -261,13 +294,15 @@ function startDrawingTask() {
 
 // 绘制画布
 function drawCanvas() {
-  // 清空画布
-  ctx.fillStyle = '#2c2c2c';
+  if (!canvas || !ctx) return;
+  
+  // 清空画布 - 白色背景
+  ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   
-  // 绘制白色圆环
-  ctx.strokeStyle = 'white';
-  ctx.lineWidth = 2;
+  // 绘制黑色圆环
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.arc(canvas.width / 2, canvas.height / 2, canvas.width / 2 - 10, 0, Math.PI * 2);
   ctx.stroke();
@@ -303,16 +338,16 @@ function drawCanvas() {
   
   ctx.putImageData(imageData, 0, 0);
   
-  // 重新绘制白色圆环（覆盖在颜色上）
-  ctx.strokeStyle = 'white';
-  ctx.lineWidth = 2;
+  // 重新绘制黑色圆环（覆盖在颜色上）
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
   ctx.stroke();
   
   // 绘制画笔预览
   if (showBrushPreview && mouseX > 0 && mouseY > 0) {
-    ctx.strokeStyle = 'rgba(200, 200, 200, 0.5)';
+    ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(mouseX, mouseY, brushSize, 0, Math.PI * 2);
@@ -352,7 +387,7 @@ function applyGaussianBrush(x, y, mode) {
           const matrixSigma = (sigma / canvas.width) * matrixSize;
           const gaussian = Math.exp(-(dist * dist) / (2 * matrixSigma * matrixSigma));
           
-          const intensity = gaussian * 50; // 调整强度
+          const intensity = gaussian * 25; // 减半强度
           
           if (mode === 'add') {
             colorMatrix[my][mx] = Math.min(255, colorMatrix[my][mx] + intensity);
@@ -369,12 +404,14 @@ function applyGaussianBrush(x, y, mode) {
 
 // 鼠标事件处理
 function handleMouseDown(e) {
+  if (e.button !== 0) return; // 只响应左键
+  e.preventDefault();
+  
   isDrawing = true;
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
   
-  drawMode = e.button === 2 ? 'subtract' : 'add';
   applyGaussianBrush(x, y, drawMode);
 }
 
@@ -382,6 +419,8 @@ function handleMouseMove(e) {
   const rect = canvas.getBoundingClientRect();
   mouseX = e.clientX - rect.left;
   mouseY = e.clientY - rect.top;
+  
+  showBrushPreview = true;
   
   if (isDrawing) {
     applyGaussianBrush(mouseX, mouseY, drawMode);
@@ -396,6 +435,8 @@ function handleMouseUp() {
 
 function handleMouseLeave() {
   isDrawing = false;
+  mouseX = -1;
+  mouseY = -1;
   showBrushPreview = false;
   drawCanvas();
 }
@@ -409,7 +450,7 @@ function handleWheel(e) {
     brushSize = Math.max(5, brushSize - 5);
   }
   
-  document.getElementById('brushSizeDisplay').textContent = brushSize;
+  console.log(`画笔大小: ${brushSize}px`);
   drawCanvas();
 }
 
@@ -485,37 +526,65 @@ function toggleDrawMode() {
 
 // 确认绘制
 function confirmDrawing() {
+  // 防止重复提交
+  if (experimentSubmitted) {
+    console.log('数据已提交，请勿重复提交');
+    return;
+  }
+  
+  experimentSubmitted = true;
+  inDrawingPhase = false;
+  
   experimentData.endTime = new Date().toISOString();
   experimentData.drawingData = colorMatrix;
   
   console.log('绘制完成，保存数据...');
   
+  // 禁用所有按钮
+  const buttons = document.querySelectorAll('.control-btn');
+  buttons.forEach(btn => btn.disabled = true);
+  
   // 保存颜色矩阵
   saveColorMatrix();
   
   // 显示完成信息
-  alert('实验完成！数据已保存，感谢您的参与。');
+  alert('实验完成！数据已保存，感谢您的参与。\n\n请关闭此窗口。');
   
   console.log('实验数据：', experimentData);
+  
+  // 尝试结束实验
+  if (psychoJS) {
+    psychoJS.quit();
+  }
 }
 
 // 保存颜色矩阵到 Pavlovia
 function saveColorMatrix() {
   // 使用 PsychoJS 保存到服务器
   if (psychoJS && psychoJS.experiment) {
-    // 保存完整的矩阵数据（JSON 格式）
-    psychoJS.experiment.addData('drawing_matrix', JSON.stringify(colorMatrix));
-    psychoJS.experiment.addData('end_time', experimentData.endTime);
-    psychoJS.experiment.addData('matrix_size', matrixSize);
-    psychoJS.experiment.addData('trial_type', 'drawing_data');
-    psychoJS.experiment.nextEntry();
-    
-    // 保存实验数据到服务器
-    psychoJS.experiment.save();
-    
-    console.log('颜色矩阵已保存到 Pavlovia');
+    try {
+      // 保存完整的矩阵数据（JSON 格式）
+      psychoJS.experiment.addData('drawing_matrix', JSON.stringify(colorMatrix));
+      psychoJS.experiment.addData('end_time', experimentData.endTime);
+      psychoJS.experiment.addData('matrix_size', matrixSize);
+      psychoJS.experiment.addData('trial_type', 'drawing_data');
+      psychoJS.experiment.nextEntry();
+      
+      // 保存实验数据到服务器
+      psychoJS.experiment.save().then(() => {
+        console.log('颜色矩阵已成功保存到 Pavlovia');
+      }).catch((error) => {
+        console.error('保存数据失败:', error);
+      });
+    } catch (error) {
+      console.error('保存数据错误:', error);
+    }
   } else {
     console.error('PsychoJS 未正确初始化，数据未保存');
+    console.log('psychoJS:', psychoJS);
+    if (psychoJS) {
+      console.log('psychoJS.experiment:', psychoJS.experiment);
+    }
   }
 }
 
@@ -524,6 +593,8 @@ function saveColorMatrix() {
 
 // 导出函数供外部调用
 window.submitInfo = submitInfo;
+window.showInstructionPage = showInstructionPage;
+window.startFromInstructions = startFromInstructions;
 window.clearCanvas = clearCanvas;
 window.confirmDrawing = confirmDrawing;
 window.toggleDrawMode = toggleDrawMode;
