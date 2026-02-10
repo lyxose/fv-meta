@@ -71,8 +71,8 @@ async function initPsychoJS() {
 //   }
   
   try {
-    // 创建 PsychoJS 实例
-    const psychoJS = new PsychoJS({
+    // 创建 PsychoJS 实例（赋值给全局变量）
+    psychoJS = new PsychoJS({
       debug: true
     });
     
@@ -114,12 +114,12 @@ document.addEventListener('DOMContentLoaded', async function() {
   experimentData.startTime = new Date().toISOString();
   
   // 初始化 PsychoJS
-//   const psychoJSReady = await initPsychoJS();
-//   if (psychoJSReady) {
-//     console.log('✓ PsychoJS 已准备就绪');
-//   } else {
-//     console.log('ℹ️  使用本地存储模式运行实验');
-//   }
+  const psychoJSReady = await initPsychoJS();
+  if (psychoJSReady) {
+    console.log('✓ PsychoJS 已准备就绪');
+  } else {
+    console.log('ℹ️  使用本地存储模式运行实验');
+  }
   
   // 添加输入框回车事件
   const inputs = document.querySelectorAll('input[type="text"]');
@@ -167,15 +167,19 @@ function submitInfo() {
   expInfo.age = participantAge;
   
   // 使用 PsychoJS 记录被试信息
-//   if (psychoJS && psychoJS.experiment) {
-    psychoJS.experiment.addData('participant_id', participantId);
-    psychoJS.experiment.addData('name', participantName);
-    psychoJS.experiment.addData('age', participantAge);
-    psychoJS.experiment.addData('start_time', experimentData.startTime);
-    psychoJS.experiment.addData('trial_type', 'participant_info');
-    psychoJS.experiment.nextEntry();
-    console.log('✓ 被试信息已记录到 PsychoJS');
-//   }
+  if (psychoJS && psychoJS.experiment) {
+    try {
+      psychoJS.experiment.addData('participant_id', participantId);
+      psychoJS.experiment.addData('name', participantName);
+      psychoJS.experiment.addData('age', participantAge);
+      psychoJS.experiment.addData('start_time', experimentData.startTime);
+      psychoJS.experiment.addData('trial_type', 'participant_info');
+      psychoJS.experiment.nextEntry();
+      console.log('✓ 被试信息已记录到 PsychoJS');
+    } catch (error) {
+      console.error('❌ PsychoJS 记录错误:', error);
+    }
+  }
   
   // 备用：本地存储
   try {
@@ -590,7 +594,7 @@ async function confirmDrawing() {
 async function saveDrawingData() {
   console.log('💾 开始保存绘制数据...');
   
-//   if (psychoJS && psychoJS.experiment) {
+  if (psychoJS && psychoJS.experiment) {
     try {
       // 转换矩阵为 JSON 字符串
       const matrixJSON = JSON.stringify(colorMatrix);
@@ -615,9 +619,9 @@ async function saveDrawingData() {
     } catch (error) {
       console.error('❌ 保存数据错误:', error);
     }
-//   } else {
-//     console.log('⚠️  PsychoJS 不可用，使用本地存储模式');
-//   }
+  } else {
+    console.log('⚠️  PsychoJS 不可用，使用本地存储模式');
+  }
   
   // 备用：本地存储
   try {
@@ -661,7 +665,7 @@ function showCompletionPage() {
   
   // 5 秒后尝试退出
   setTimeout(() => {
-    if (psychoJS && psychoJS.quit) {
+    if (psychoJS && typeof psychoJS.quit === 'function') {
       console.log('👋 正在退出 Pavlovia 实验...');
       psychoJS.quit();
     } else {
