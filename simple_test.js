@@ -200,17 +200,37 @@ function startFromInstructions() {
 
 // 保存被试信息到 Pavlovia
 function saveParticipantInfo() {
-  // 使用 PsychoJS 保存到服务器
+  // 使用 PsychoJS 保存到服务器（如果可用）
   if (psychoJS && psychoJS.experiment) {
-    psychoJS.experiment.addData('participant_id', experimentData.participantInfo.id);
-    psychoJS.experiment.addData('name', experimentData.participantInfo.name);
-    psychoJS.experiment.addData('age', experimentData.participantInfo.age);
-    psychoJS.experiment.addData('start_time', experimentData.startTime);
-    psychoJS.experiment.addData('trial_type', 'participant_info');
-    psychoJS.experiment.nextEntry();
-    console.log('被试信息已保存到 Pavlovia');
+    try {
+      psychoJS.experiment.addData('participant_id', experimentData.participantInfo.id);
+      psychoJS.experiment.addData('name', experimentData.participantInfo.name);
+      psychoJS.experiment.addData('age', experimentData.participantInfo.age);
+      psychoJS.experiment.addData('start_time', experimentData.startTime);
+      psychoJS.experiment.addData('trial_type', 'participant_info');
+      psychoJS.experiment.nextEntry();
+      console.log('被试信息已保存到 Pavlovia');
+    } catch (error) {
+      console.error('保存被试信息错误:', error);
+    }
   } else {
-    console.warn('PsychoJS 未正确初始化，数据未保存');
+    console.log('PsychoJS 未可用，使用本地存储');
+  }
+  
+  // 备用：也保存到 localStorage 作为备份
+  try {
+    localStorage.setItem(
+      `participant_info_${experimentData.participantInfo.id}`,
+      JSON.stringify({
+        id: experimentData.participantInfo.id,
+        name: experimentData.participantInfo.name,
+        age: experimentData.participantInfo.age,
+        start_time: experimentData.startTime
+      })
+    );
+    console.log('被试信息已保存到本地 localStorage');
+  } catch (error) {
+    console.error('本地保存错误:', error);
   }
 }
 
@@ -553,44 +573,68 @@ function confirmDrawing() {
   // 保存颜色矩阵
   saveColorMatrix();
   
-  // 显示完成信息
-  alert('实验完成！数据已保存，感谢您的参与。\n\n请关闭此窗口。');
+  // 显示完成页面（而非弹窗）
+  setTimeout(() => {
+    showCompletionPage();
+  }, 500);
   
   console.log('实验数据：', experimentData);
-  
-  // 尝试结束实验
-  if (psychoJS) {
-    psychoJS.quit();
-  }
 }
 
 // 保存颜色矩阵到 Pavlovia
 function saveColorMatrix() {
-  // 使用 PsychoJS 保存到服务器
+  console.log('开始保存颜色矩阵...');
+  
+  // 使用 PsychoJS 保存到服务器（如果可用）
   if (psychoJS && psychoJS.experiment) {
     try {
-      // 保存完整的矩阵数据（JSON 格式）
-      psychoJS.experiment.addData('drawing_matrix', JSON.stringify(colorMatrix));
+      const matrixJSON = JSON.stringify(colorMatrix);
+      psychoJS.experiment.addData('drawing_matrix', matrixJSON);
       psychoJS.experiment.addData('end_time', experimentData.endTime);
       psychoJS.experiment.addData('matrix_size', matrixSize);
       psychoJS.experiment.addData('trial_type', 'drawing_data');
       psychoJS.experiment.nextEntry();
       
-      // 保存实验数据到服务器
-      psychoJS.experiment.save().then(() => {
-        console.log('颜色矩阵已成功保存到 Pavlovia');
-      }).catch((error) => {
-        console.error('保存数据失败:', error);
-      });
+      if (psychoJS.experiment.save) {
+        psychoJS.experiment.save().then(() => {
+          console.log('颜色矩阵已成功保存到 Pavlovia');
+        }).catch((error) => {
+          console.error('保存到 Pavlovia 失败:', error);
+        });
+      }
     } catch (error) {
       console.error('保存数据错误:', error);
     }
   } else {
-    console.error('PsychoJS 未正确初始化，数据未保存');
-    console.log('psychoJS:', psychoJS);
-    if (psychoJS) {
-      console.log('psychoJS.experiment:', psychoJS.experiment);
+    console.log('PsychoJS 未可用，使用本地存储');
+  }
+  
+  // 备用：保存到 localStorage
+  try {
+    const sparseData = {};
+    let nonZeroCount = 0;
+    for (let i = 0; i < matrixSize; i++) {
+      for (let j = 0; j < matrixSize; j++) {
+        if (colorMatrix[i][j] > 0) {
+          sparseData[`${i},${j}`] = Math.round(colorMatrix[i][j]);
+          nonZeroCount++;
+        }
+      }
     }
+    
+    localStorage.setItem(
+      `drawing_data_${experimentData.participantInfo.id}`,
+      JSON.stringify({
+        participant_id: experimentData.participantInfo.id,
+        matrix_size: matrixSize,
+        non_zero_count: nonZeroCount,
+        sparse_data: sparseData,
+        end_time: experimentData.endTime
+      })
+    );
+    console.log(`颜色矩阵已保存到本地 localStorage (${nonZeroCount} 个非零元素)`);
+  } catch (error) {
+    console.error('本地保存错误:', error);
   }
 }
 
