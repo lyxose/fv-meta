@@ -1,20 +1,24 @@
 /************************ 
  * Simple_Test *
- * 使用 PsychoJS 标准初始化的在线实验脚本
  ************************/
 
-// 全局 PsychoJS 实例
-let psychoJS;
+import { core, data, sound, util, visual, hardware } from './lib/psychojs-2025.2.4.js';
+const { PsychoJS } = core;
+const { TrialHandler, MultiStairHandler } = data;
+const { Scheduler } = util;
 
-// 实验信息
+// store info about the experiment session:
 let expName = 'simple_test';
 let expInfo = {
-    'participant': `${pad(Math.floor(Math.random() * 999999), 6)}`,
+    'participant': `${util.pad(Number.parseFloat(util.randint(0, 999999)).toFixed(0), 6)}`,
     'session': '001',
 };
+let PILOTING = util.getUrlParameters().has('__pilotToken');
 
-// 检查是否为试点
-let PILOTING = new URL(window.location.href).searchParams.has('__pilotToken');
+// init psychoJS:
+const psychoJS = new PsychoJS({
+  debug: true
+});
 
 // 实验数据容器
 let experimentData = {
@@ -46,80 +50,26 @@ let inDrawingPhase = false;
 let lastClickTime = 0;
 let clickTimeout = null;
 
-// 辅助函数：填充数字为指定长度
-function pad(num, len) {
-  let s = num + '';
-  while (s.length < len) s = '0' + s;
-  return s;
-}
+// 启动 PsychoJS
+psychoJS.start({
+  expName: expName,
+  expInfo: expInfo,
+  resources: []
+});
 
-// 初始化 PsychoJS
-async function initPsychoJS() {
-  console.log('开始初始化 PsychoJS...');
-  
-  // 等待 PsychoJS 库加载（最多等待 3 秒）
-  let retries = 0;
-  while (typeof PsychoJS === 'undefined' && retries < 30) {
-    await new Promise(resolve => setTimeout(resolve, 100));
-    retries++;
-  }
-  
-  if (typeof PsychoJS === 'undefined') {
-    console.warn('⚠️  PsychoJS 库加载超时，使用本地存储模式');
-    psychoJS = null;
-    return false;
-  }
-  
-  try {
-    // 创建 PsychoJS 实例
-    psychoJS = new PsychoJS({
-      debug: true
-    });
-    
-    console.log('✓ PsychoJS 实例创建成功');
-    
-    // 设置重定向 URL（Pavlovia 会使用这些）
-    psychoJS.setRedirectUrls(
-      'https://pavlovia.org/',
-      'https://pavlovia.org/'
-    );
-    
-    // 启动 PsychoJS
-    console.log('正在启动 PsychoJS...');
-    await psychoJS.start({
-      expName: expName,
-      expInfo: expInfo,
-      resources: []
-    });
-    
-    console.log('✓ PsychoJS 启动成功');
-    console.log('✓ 实验信息:', expInfo);
-    
-    // 设置日志级别
-    psychoJS.experimentLogger.setLevel(0); // INFO level
-    
-    return true;
-  } catch (error) {
-    console.error('❌ PsychoJS 初始化失败:', error);
-    console.log('⚠️  继续使用本地存储模式...');
-    psychoJS = null;
-    return false;
-  }
-}
+psychoJS.experimentLogger.setLevel(core.Logger.ServerLevel.INFO);
+
+// 设置数据文件名
+expInfo['date'] = util.MonotonicClock.getDateStr();
+expInfo['expName'] = expName;
+psychoJS.experiment.dataFileName = (("." + "/") + `data/${expInfo["participant"]}_${expName}_${expInfo["date"]}`);
+psychoJS.experiment.field_separator = '\t';
 
 // 页面加载完成
-document.addEventListener('DOMContentLoaded', async function() {
-  console.log('📄 页面加载完成，开始初始化实验...');
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('📄 页面加载完成');
   
   experimentData.startTime = new Date().toISOString();
-  
-  // 初始化 PsychoJS
-  const psychoJSReady = await initPsychoJS();
-  if (psychoJSReady) {
-    console.log('✓ PsychoJS 已准备就绪');
-  } else {
-    console.log('ℹ️  使用本地存储模式运行实验');
-  }
   
   // 添加输入框回车事件
   const inputs = document.querySelectorAll('input[type="text"]');
@@ -167,15 +117,13 @@ function submitInfo() {
   expInfo.age = participantAge;
   
   // 使用 PsychoJS 记录被试信息
-  if (psychoJS && psychoJS.experiment) {
-    psychoJS.experiment.addData('participant_id', participantId);
-    psychoJS.experiment.addData('name', participantName);
-    psychoJS.experiment.addData('age', participantAge);
-    psychoJS.experiment.addData('start_time', experimentData.startTime);
-    psychoJS.experiment.addData('trial_type', 'participant_info');
-    psychoJS.experiment.nextEntry();
-    console.log('✓ 被试信息已记录到 PsychoJS');
-  }
+  psychoJS.experiment.addData('participant_id', participantId);
+  psychoJS.experiment.addData('name', participantName);
+  psychoJS.experiment.addData('age', participantAge);
+  psychoJS.experiment.addData('start_time', experimentData.startTime);
+  psychoJS.experiment.addData('trial_type', 'participant_info');
+  psychoJS.experiment.nextEntry();
+  console.log('✓ 被试信息已记录到 PsychoJS');
   
   // 备用：本地存储
   try {
@@ -590,33 +538,25 @@ async function confirmDrawing() {
 async function saveDrawingData() {
   console.log('💾 开始保存绘制数据...');
   
-  if (psychoJS && psychoJS.experiment) {
-    try {
-      // 转换矩阵为 JSON 字符串
-      const matrixJSON = JSON.stringify(colorMatrix);
-      
-      // 添加数据到 PsychoJS
-      psychoJS.experiment.addData('drawing_matrix', matrixJSON);
-      psychoJS.experiment.addData('end_time', experimentData.endTime);
-      psychoJS.experiment.addData('matrix_size', matrixSize);
-      psychoJS.experiment.addData('trial_type', 'drawing_data');
-      
-      // 推进到下一行
-      psychoJS.experiment.nextEntry();
-      
-      // 保存到服务器
-      if (psychoJS.experiment.save) {
-        await psychoJS.experiment.save();
-        console.log('✓ 数据已成功保存到 Pavlovia 服务器');
-      } else {
-        console.log('ℹ️  PsychoJS 数据已格式化待上传');
-      }
-      
-    } catch (error) {
-      console.error('❌ 保存数据错误:', error);
-    }
-  } else {
-    console.log('⚠️  PsychoJS 不可用，使用本地存储模式');
+  try {
+    // 转换矩阵为 JSON 字符串
+    const matrixJSON = JSON.stringify(colorMatrix);
+    
+    // 添加数据到 PsychoJS
+    psychoJS.experiment.addData('drawing_matrix', matrixJSON);
+    psychoJS.experiment.addData('end_time', experimentData.endTime);
+    psychoJS.experiment.addData('matrix_size', matrixSize);
+    psychoJS.experiment.addData('trial_type', 'drawing_data');
+    
+    // 推进到下一行
+    psychoJS.experiment.nextEntry();
+    
+    // 保存到服务器
+    await psychoJS.experiment.save();
+    console.log('✓ 数据已成功保存到 Pavlovia 服务器');
+    
+  } catch (error) {
+    console.error('❌ 保存数据错误:', error);
   }
   
   // 备用：本地存储
@@ -667,13 +607,8 @@ function showCompletionPage() {
     } else {
       console.log('ℹ️  实验完成。请关闭此窗口。');
     }
-  }, 5000);
-}
-
-// 导出全局函数
-window.submitInfo = submitInfo;
-window.showInstructionPage = showInstructionPage;
-window.startFromInstructions = startFromInstructions;
-window.clearCanvas = clearCanvas;
+  }, 5000退出
+  setTimeout(() => {
+    psychoJS.quit({message: 'Thank you for your patience.', isCompleted: true});w.clearCanvas = clearCanvas;
 window.confirmDrawing = confirmDrawing;
 window.toggleDrawMode = toggleDrawMode;
