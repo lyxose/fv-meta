@@ -114,12 +114,12 @@ document.addEventListener('DOMContentLoaded', async function() {
   experimentData.startTime = new Date().toISOString();
   
   // 初始化 PsychoJS
-  const psychoJSReady = await initPsychoJS();
-  if (psychoJSReady) {
-    console.log('✓ PsychoJS 已准备就绪');
-  } else {
-    console.log('ℹ️  使用本地存储模式运行实验');
-  }
+//   const psychoJSReady = await initPsychoJS();
+//   if (psychoJSReady) {
+//     console.log('✓ PsychoJS 已准备就绪');
+//   } else {
+//     console.log('ℹ️  使用本地存储模式运行实验');
+//   }
   
   // 添加输入框回车事件
   const inputs = document.querySelectorAll('input[type="text"]');
