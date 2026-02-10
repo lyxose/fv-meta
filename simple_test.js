@@ -3,8 +3,8 @@
  * 使用 PsychoJS 的在线实验脚本
  ************************/
 
-// PsychoJS 实例
-let psychoJS;
+// PsychoJS 实例（可能为 null）
+let psychoJS = null;
 let expInfo = {
   participant: '',
   name: '',
@@ -38,34 +38,40 @@ let showBrushPreview = true;
 let experimentSubmitted = false;  // 防止重复提交
 let inDrawingPhase = false;  // 是否在绘制阶段
 
-// 初始化 PsychoJS
+// 初始化 PsychoJS（延迟初始化）
 function initPsychoJS() {
-  try {
-    psychoJS = new PsychoJS({
-      debug: true
-    });
-    
-    // 设置实验名称和数据文件路径
-    psychoJS.setRedirectUrls(
-      'https://pavlovia.org',  // 完成后跳转
-      'https://pavlovia.org'   // 取消后跳转
-    );
-    
-    // 开始实验
-    psychoJS.start({
-      expName: experimentData.expName,
-      expInfo: expInfo,
-      resources: []
-    }).then(() => {
-      console.log('PsychoJS 启动成功');
-    }).catch((error) => {
-      console.error('PsychoJS 启动失败:', error);
-    });
-    
-    console.log('PsychoJS 初始化完成');
-  } catch (error) {
-    console.error('PsychoJS 初始化错误:', error);
-  }
+  // 尝试使用 PsychoJS，如果不可用则跳过
+  if (typeof PsychoJS !== 'undefined') {
+    try {
+      psychoJS = new PsychoJS({
+        debug: true
+      });
+      
+      // 设置实验名称和数据文件路径
+      psychoJS.setRedirectUrls(
+        'https://pavlovia.org',  // 完成后跳转
+        'https://pavlovia.org'   // 取消后跳转
+      );
+      
+      // 开始实验
+      psychoJS.start({
+        expName: experimentData.expName,
+        expInfo: expInfo,
+        resources: []
+      }).then(() => {
+        console.log('PsychoJS 启动成功');
+      }).catch((error) => {
+        console.error('PsychoJS 启动失败:', error);
+        psychoJS = null;
+      });
+      
+      console.log('PsychoJS 初始化完成');
+    } catch (error) {
+      console.error('PsychoJS 初始化错误:', error);
+      psychoJS = null;
+    }
+  } else {
+    console.log('PsychoJS 库未加载，继续使用本地存储');}
 }
 
 // 页面加载完成后初始化
@@ -296,22 +302,22 @@ function startDrawingTask() {
 function drawCanvas() {
   if (!canvas || !ctx) return;
   
-  // 清空画布 - 白色背景
-  ctx.fillStyle = '#ffffff';
+  // 清空画布 - 黑色背景
+  ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   
-  // 绘制黑色圆环
-  ctx.strokeStyle = '#000000';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(canvas.width / 2, canvas.height / 2, canvas.width / 2 - 10, 0, Math.PI * 2);
-  ctx.stroke();
-  
-  // 绘制颜色矩阵
-  const imageData = ctx.createImageData(canvas.width, canvas.height);
   const centerX = canvas.width / 2;
   const centerY = canvas.height / 2;
   const radius = canvas.width / 2 - 10;
+  
+  // 绘制白色圆盘背景
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // 绘制颜色矩阵
+  const imageData = ctx.createImageData(canvas.width, canvas.height);
   
   for (let y = 0; y < canvas.height; y++) {
     for (let x = 0; x < canvas.width; x++) {
@@ -319,7 +325,7 @@ function drawCanvas() {
       const dy = y - centerY;
       const dist = Math.sqrt(dx * dx + dy * dy);
       
-      // 只在圆环内绘制
+      // 只在圆盘内绘制
       if (dist <= radius) {
         const matrixX = Math.floor((x / canvas.width) * matrixSize);
         const matrixY = Math.floor((y / canvas.height) * matrixSize);
@@ -338,9 +344,9 @@ function drawCanvas() {
   
   ctx.putImageData(imageData, 0, 0);
   
-  // 重新绘制黑色圆环（覆盖在颜色上）
-  ctx.strokeStyle = '#000000';
-  ctx.lineWidth = 3;
+  // 重新绘制白色圆圈边界
+  ctx.strokeStyle = '#999999';
+  ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
   ctx.stroke();
@@ -591,10 +597,29 @@ function saveColorMatrix() {
 // 注意：数据现在直接保存到 Pavlovia 服务器
 // 实验开发者可以通过 Pavlovia dashboard 下载 results
 
+// 显示实验完成页面
+function showCompletionPage() {
+  const drawingInterface = document.getElementById('drawingInterface');
+  const completionPage = document.getElementById('completionPage');
+  
+  if (drawingInterface) drawingInterface.style.display = 'none';
+  if (completionPage) completionPage.style.display = 'flex';
+  
+  console.log('显示实验完成页面');
+  
+  // 5秒后尝试退出实验
+  setTimeout(() => {
+    if (psychoJS && psychoJS.quit) {
+      psychoJS.quit();
+    }
+  }, 5000);
+}
+
 // 导出函数供外部调用
 window.submitInfo = submitInfo;
 window.showInstructionPage = showInstructionPage;
 window.startFromInstructions = startFromInstructions;
+window.showCompletionPage = showCompletionPage;
 window.clearCanvas = clearCanvas;
 window.confirmDrawing = confirmDrawing;
 window.toggleDrawMode = toggleDrawMode;
