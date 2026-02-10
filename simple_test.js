@@ -167,7 +167,7 @@ function submitInfo() {
   expInfo.age = participantAge;
   
   // 使用 PsychoJS 记录被试信息
-  if (psychoJS && psychoJS.experiment) {
+//   if (psychoJS && psychoJS.experiment) {
     psychoJS.experiment.addData('participant_id', participantId);
     psychoJS.experiment.addData('name', participantName);
     psychoJS.experiment.addData('age', participantAge);
@@ -175,7 +175,7 @@ function submitInfo() {
     psychoJS.experiment.addData('trial_type', 'participant_info');
     psychoJS.experiment.nextEntry();
     console.log('✓ 被试信息已记录到 PsychoJS');
-  }
+//   }
   
   // 备用：本地存储
   try {
@@ -590,7 +590,7 @@ async function confirmDrawing() {
 async function saveDrawingData() {
   console.log('💾 开始保存绘制数据...');
   
-  if (psychoJS && psychoJS.experiment) {
+//   if (psychoJS && psychoJS.experiment) {
     try {
       // 转换矩阵为 JSON 字符串
       const matrixJSON = JSON.stringify(colorMatrix);
@@ -615,9 +615,9 @@ async function saveDrawingData() {
     } catch (error) {
       console.error('❌ 保存数据错误:', error);
     }
-  } else {
-    console.log('⚠️  PsychoJS 不可用，使用本地存储模式');
-  }
+//   } else {
+//     console.log('⚠️  PsychoJS 不可用，使用本地存储模式');
+//   }
   
   // 备用：本地存储
   try {
