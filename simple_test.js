@@ -5,6 +5,8 @@
 
 import { core, data, sound, util, visual, hardware } from './lib/psychojs-2025.2.4.js';
 const { PsychoJS } = core;
+const { TrialHandler, MultiStairHandler } = data;
+const { Scheduler } = util;
 
 // store info about the experiment session:
 let expName = 'simple_test';
