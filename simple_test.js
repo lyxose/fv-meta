@@ -57,13 +57,26 @@ function pad(num, len) {
 async function initPsychoJS() {
   console.log('开始初始化 PsychoJS...');
   
+  // 等待 PsychoJS 库加载（最多等待 3 秒）
+  let retries = 0;
+  while (typeof PsychoJS === 'undefined' && retries < 30) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    retries++;
+  }
+  
+  if (typeof PsychoJS === 'undefined') {
+    console.warn('⚠️  PsychoJS 库加载超时，使用本地存储模式');
+    psychoJS = null;
+    return false;
+  }
+  
   try {
     // 创建 PsychoJS 实例
     psychoJS = new PsychoJS({
       debug: true
     });
     
-    console.log('PsychoJS 实例创建成功');
+    console.log('✓ PsychoJS 实例创建成功');
     
     // 设置重定向 URL（Pavlovia 会使用这些）
     psychoJS.setRedirectUrls(
@@ -72,23 +85,23 @@ async function initPsychoJS() {
     );
     
     // 启动 PsychoJS
-    // 注意：这会触发登录对话框（Pavlovia）或参与者信息对话框
+    console.log('正在启动 PsychoJS...');
     await psychoJS.start({
       expName: expName,
       expInfo: expInfo,
       resources: []
     });
     
-    console.log('PsychoJS 启动成功');
-    console.log('实验信息:', expInfo);
+    console.log('✓ PsychoJS 启动成功');
+    console.log('✓ 实验信息:', expInfo);
     
     // 设置日志级别
     psychoJS.experimentLogger.setLevel(0); // INFO level
     
     return true;
   } catch (error) {
-    console.error('PsychoJS 初始化失败:', error);
-    console.log('继续使用本地存储模式...');
+    console.error('❌ PsychoJS 初始化失败:', error);
+    console.log('⚠️  继续使用本地存储模式...');
     psychoJS = null;
     return false;
   }
@@ -96,12 +109,17 @@ async function initPsychoJS() {
 
 // 页面加载完成
 document.addEventListener('DOMContentLoaded', async function() {
-  console.log('页面加载完成，开始初始化实验...');
+  console.log('📄 页面加载完成，开始初始化实验...');
   
   experimentData.startTime = new Date().toISOString();
   
   // 初始化 PsychoJS
-  await initPsychoJS();
+  const psychoJSReady = await initPsychoJS();
+  if (psychoJSReady) {
+    console.log('✓ PsychoJS 已准备就绪');
+  } else {
+    console.log('ℹ️  使用本地存储模式运行实验');
+  }
   
   // 添加输入框回车事件
   const inputs = document.querySelectorAll('input[type="text"]');
@@ -172,7 +190,7 @@ function submitInfo() {
     );
     console.log('✓ 被试信息已保存到本地存储');
   } catch (error) {
-    console.error('本地存储失败:', error);
+    console.error('❌ 本地存储失败:', error);
   }
   
   // 显示消息
@@ -204,7 +222,7 @@ function showInstructionPage() {
   if (root) root.style.display = 'none';
   if (instructionPage) instructionPage.style.display = 'flex';
   
-  console.log('显示实验说明页');
+  console.log('📖 显示实验说明页');
 }
 
 // 从说明页开始实验
@@ -286,7 +304,7 @@ function startDrawingTask() {
   resizeCanvas();
   clearCanvas();
   
-  console.log('绘制任务开始');
+  console.log('🎨 绘制任务开始');
 }
 
 // 绘制画布
@@ -541,7 +559,7 @@ function toggleDrawMode() {
 // 确认绘制
 async function confirmDrawing() {
   if (experimentSubmitted) {
-    console.log('数据已提交，请勿重复提交');
+    console.log('⚠️  数据已提交，请勿重复提交');
     return;
   }
   
@@ -551,7 +569,7 @@ async function confirmDrawing() {
   experimentData.endTime = new Date().toISOString();
   experimentData.drawingData = colorMatrix;
   
-  console.log('绘制完成，保存数据...');
+  console.log('✏️  绘制完成，保存数据...');
   
   // 禁用按钮
   const buttons = document.querySelectorAll('.control-btn');
@@ -565,12 +583,12 @@ async function confirmDrawing() {
     showCompletionPage();
   }, 500);
   
-  console.log('实验数据:', experimentData);
+  console.log('📊 实验数据已完整保存');
 }
 
 // 保存绘制数据
 async function saveDrawingData() {
-  console.log('开始保存绘制数据...');
+  console.log('💾 开始保存绘制数据...');
   
   if (psychoJS && psychoJS.experiment) {
     try {
@@ -591,14 +609,14 @@ async function saveDrawingData() {
         await psychoJS.experiment.save();
         console.log('✓ 数据已成功保存到 Pavlovia 服务器');
       } else {
-        console.log('⚠ PsychoJS 不支持直接保存，数据已格式化待上传');
+        console.log('ℹ️  PsychoJS 数据已格式化待上传');
       }
       
     } catch (error) {
-      console.error('保存数据错误:', error);
+      console.error('❌ 保存数据错误:', error);
     }
   } else {
-    console.log('⚠ PsychoJS 不可用，使用本地存储模式');
+    console.log('⚠️  PsychoJS 不可用，使用本地存储模式');
   }
   
   // 备用：本地存储
@@ -627,7 +645,7 @@ async function saveDrawingData() {
     );
     console.log(`✓ 本地存储: ${nonZeroCount} 个非零元素已保存`);
   } catch (error) {
-    console.error('本地存储错误:', error);
+    console.error('❌ 本地存储错误:', error);
   }
 }
 
@@ -639,12 +657,15 @@ function showCompletionPage() {
   if (drawingInterface) drawingInterface.style.display = 'none';
   if (completionPage) completionPage.style.display = 'flex';
   
-  console.log('实验完成，显示完成页面');
+  console.log('✅ 实验完成，显示完成页面');
   
   // 5 秒后尝试退出
   setTimeout(() => {
     if (psychoJS && psychoJS.quit) {
+      console.log('👋 正在退出 Pavlovia 实验...');
       psychoJS.quit();
+    } else {
+      console.log('ℹ️  实验完成。请关闭此窗口。');
     }
   }, 5000);
 }
