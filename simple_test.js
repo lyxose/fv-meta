@@ -3,13 +3,17 @@
  * 使用 PsychoJS 的在线实验脚本
  ************************/
 
-// PsychoJS 实例（可能为 null）
+// PsychoJS 实例（或使用全局 psychoJS 对象）
 let psychoJS = null;
 let expInfo = {
   participant: '',
   name: '',
   age: ''
 };
+
+// 双击控制
+let lastClickTime = 0;
+let clickTimeout = null;
 
 // 实验数据
 let experimentData = {
@@ -353,9 +357,12 @@ function drawCanvas() {
         if (matrixX >= 0 && matrixX < matrixSize && matrixY >= 0 && matrixY < matrixSize) {
           const value = colorMatrix[matrixY][matrixX];
           const idx = (y * canvas.width + x) * 4;
-          imageData.data[idx] = value;     // R
-          imageData.data[idx + 1] = 0;     // G
-          imageData.data[idx + 2] = 0;     // B
+          // 初始值为 0 时显示白色（255），有绘制时显示红色
+          const redValue = Math.max(0, 255 - value);
+          const greenBlueValue = Math.max(0, 255 - value);
+          imageData.data[idx] = 255;     // R（白色底，加上绘制时的红色）
+          imageData.data[idx + 1] = greenBlueValue;     // G（减少以显示红色）
+          imageData.data[idx + 2] = greenBlueValue;     // B（减少以显示红色）
           imageData.data[idx + 3] = 255;   // A
         }
       }
@@ -430,6 +437,28 @@ function applyGaussianBrush(x, y, mode) {
 
 // 鼠标事件处理
 function handleMouseDown(e) {
+  // 检测双击
+  const now = Date.now();
+  const timeDiff = now - lastClickTime;
+  
+  if (timeDiff < 300 && timeDiff > 0) {
+    // 双击了
+    e.preventDefault();
+    toggleDrawMode();
+    console.log('改变模式为: ' + (drawMode === 'add' ? '绘制' : '减淡'));
+    lastClickTime = 0;
+    if (clickTimeout) clearTimeout(clickTimeout);
+    return;
+  }
+  
+  lastClickTime = now;
+  
+  // 设置一个超时重置
+  if (clickTimeout) clearTimeout(clickTimeout);
+  clickTimeout = setTimeout(() => {
+    lastClickTime = 0;
+  }, 300);
+  
   if (e.button !== 0) return; // 只响应左键
   e.preventDefault();
   
