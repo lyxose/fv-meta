@@ -1,23 +1,23 @@
 /************************ 
  * Simple_Test *
- * 使用 PsychoJS 的在线实验脚本
+ * 使用 PsychoJS 标准初始化的在线实验脚本
  ************************/
 
-// PsychoJS 实例（或使用全局 psychoJS 对象）
-let psychoJS = null;
+// 全局 PsychoJS 实例
+let psychoJS;
+
+// 实验信息
+let expName = 'simple_test';
 let expInfo = {
-  participant: '',
-  name: '',
-  age: ''
+    'participant': `${pad(Math.floor(Math.random() * 999999), 6)}`,
+    'session': '001',
 };
 
-// 双击控制
-let lastClickTime = 0;
-let clickTimeout = null;
+// 检查是否为试点
+let PILOTING = new URL(window.location.href).searchParams.has('__pilotToken');
 
-// 实验数据
+// 实验数据容器
 let experimentData = {
-  expName: 'simple_test',
   startTime: null,
   endTime: null,
   participantInfo: {},
@@ -31,66 +31,79 @@ let drawMode = 'add'; // 'add' or 'subtract'
 let brushSize = 30;
 let colorMatrix = null;
 let canvasSize = 0;
-let matrixSize = 256; // 颜色矩阵大小
+let matrixSize = 256;
 
-// 鼠标位置和画笔预览
+// 鼠标位置
 let mouseX = 0;
 let mouseY = 0;
 let showBrushPreview = true;
 
-// 实验状态控制
-let experimentSubmitted = false;  // 防止重复提交
-let inDrawingPhase = false;  // 是否在绘制阶段
+// 实验状态
+let experimentSubmitted = false;
+let inDrawingPhase = false;
 
-// 初始化 PsychoJS（延迟初始化）
-function initPsychoJS() {
-  // 尝试使用 PsychoJS，如果不可用则跳过
-  if (typeof PsychoJS !== 'undefined') {
-    try {
-      psychoJS = new PsychoJS({
-        debug: true
-      });
-      
-      // 设置实验名称和数据文件路径
-      psychoJS.setRedirectUrls(
-        'https://pavlovia.org',  // 完成后跳转
-        'https://pavlovia.org'   // 取消后跳转
-      );
-      
-      // 开始实验
-      psychoJS.start({
-        expName: experimentData.expName,
-        expInfo: expInfo,
-        resources: []
-      }).then(() => {
-        console.log('PsychoJS 启动成功');
-      }).catch((error) => {
-        console.error('PsychoJS 启动失败:', error);
-        psychoJS = null;
-      });
-      
-      console.log('PsychoJS 初始化完成');
-    } catch (error) {
-      console.error('PsychoJS 初始化错误:', error);
-      psychoJS = null;
-    }
-  } else {
-    console.log('PsychoJS 库未加载，继续使用本地存储');}
+// 双击控制
+let lastClickTime = 0;
+let clickTimeout = null;
+
+// 辅助函数：填充数字为指定长度
+function pad(num, len) {
+  let s = num + '';
+  while (s.length < len) s = '0' + s;
+  return s;
 }
 
-// 页面加载完成后初始化
-document.addEventListener('DOMContentLoaded', function() {
-  console.log('实验页面加载完成');
+// 初始化 PsychoJS
+async function initPsychoJS() {
+  console.log('开始初始化 PsychoJS...');
+  
+  try {
+    // 创建 PsychoJS 实例
+    psychoJS = new PsychoJS({
+      debug: true
+    });
+    
+    console.log('PsychoJS 实例创建成功');
+    
+    // 设置重定向 URL（Pavlovia 会使用这些）
+    psychoJS.setRedirectUrls(
+      'https://pavlovia.org/',
+      'https://pavlovia.org/'
+    );
+    
+    // 启动 PsychoJS
+    // 注意：这会触发登录对话框（Pavlovia）或参与者信息对话框
+    await psychoJS.start({
+      expName: expName,
+      expInfo: expInfo,
+      resources: []
+    });
+    
+    console.log('PsychoJS 启动成功');
+    console.log('实验信息:', expInfo);
+    
+    // 设置日志级别
+    psychoJS.experimentLogger.setLevel(0); // INFO level
+    
+    return true;
+  } catch (error) {
+    console.error('PsychoJS 初始化失败:', error);
+    console.log('继续使用本地存储模式...');
+    psychoJS = null;
+    return false;
+  }
+}
+
+// 页面加载完成
+document.addEventListener('DOMContentLoaded', async function() {
+  console.log('页面加载完成，开始初始化实验...');
+  
   experimentData.startTime = new Date().toISOString();
   
   // 初始化 PsychoJS
-  try {
-    initPsychoJS();
-  } catch (error) {
-    console.error('PsychoJS 初始化失败:', error);
-  }
+  await initPsychoJS();
   
-  // 添加输入框的回车事件监听
+  // 添加输入框回车事件
   const inputs = document.querySelectorAll('input[type="text"]');
   inputs.forEach(input => {
     input.addEventListener('keypress', function(event) {
@@ -100,66 +113,69 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
   
-  // 初始化绘制界面（延迟初始化，确保 DOM 完全加载）
+  // 初始化绘制界面
   setTimeout(() => {
     initDrawingInterface();
   }, 100);
 });
 
-// 检测是否为移动设备
-function isMobileDevice() {
-  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-    || (window.innerWidth <= 768);
-}
-
-// 提交信息函数
+// 提交被试信息
 function submitInfo() {
-  // 获取输入值
   const participantId = document.getElementById('participantId').value.trim();
   const participantName = document.getElementById('participantName').value.trim();
   const participantAge = document.getElementById('participantAge').value.trim();
   
-  // 验证输入
-  if (!participantId) {
-    alert('请输入被试编号！');
-    document.getElementById('participantId').focus();
+  // 验证
+  if (!participantId || !participantName || !participantAge) {
+    alert('请填写所有字段！');
     return;
   }
   
-  if (!participantName) {
-    alert('请输入姓名！');
-    document.getElementById('participantName').focus();
-    return;
-  }
-  
-  if (!participantAge) {
-    alert('请输入年龄！');
-    document.getElementById('participantAge').focus();
-    return;
-  }
-  
-  // 验证年龄是否为数字
   if (isNaN(participantAge) || participantAge <= 0) {
     alert('请输入有效的年龄！');
-    document.getElementById('participantAge').focus();
     return;
   }
   
-  // 存储数据
+  // 保存到实验数据
   experimentData.participantInfo = {
     id: participantId,
     name: participantName,
     age: participantAge
   };
   
+  // 更新 expInfo（供 PsychoJS 使用）
   expInfo.participant = participantId;
   expInfo.name = participantName;
   expInfo.age = participantAge;
   
-  // 保存被试信息
-  saveParticipantInfo();
+  // 使用 PsychoJS 记录被试信息
+  if (psychoJS && psychoJS.experiment) {
+    psychoJS.experiment.addData('participant_id', participantId);
+    psychoJS.experiment.addData('name', participantName);
+    psychoJS.experiment.addData('age', participantAge);
+    psychoJS.experiment.addData('start_time', experimentData.startTime);
+    psychoJS.experiment.addData('trial_type', 'participant_info');
+    psychoJS.experiment.nextEntry();
+    console.log('✓ 被试信息已记录到 PsychoJS');
+  }
   
-  // 显示成功消息
+  // 备用：本地存储
+  try {
+    localStorage.setItem(
+      `participant_info_${participantId}`,
+      JSON.stringify({
+        id: participantId,
+        name: participantName,
+        age: participantAge,
+        start_time: experimentData.startTime
+      })
+    );
+    console.log('✓ 被试信息已保存到本地存储');
+  } catch (error) {
+    console.error('本地存储失败:', error);
+  }
+  
+  // 显示消息
   const resultMessage = document.getElementById('resultMessage');
   resultMessage.style.display = 'block';
   resultMessage.innerHTML = `
@@ -170,11 +186,11 @@ function submitInfo() {
     即将显示实验说明...
   `;
   
-  // 禁用输入框和按钮
+  // 禁用按钮
   document.querySelectorAll('input').forEach(input => input.disabled = true);
   document.querySelector('button').disabled = true;
   
-  // 2秒后显示实验说明页
+  // 显示说明页
   setTimeout(() => {
     showInstructionPage();
   }, 2000);
@@ -186,9 +202,7 @@ function showInstructionPage() {
   const instructionPage = document.getElementById('instructionPage');
   
   if (root) root.style.display = 'none';
-  if (instructionPage) {
-    instructionPage.style.display = 'flex';
-  }
+  if (instructionPage) instructionPage.style.display = 'flex';
   
   console.log('显示实验说明页');
 }
@@ -196,46 +210,8 @@ function showInstructionPage() {
 // 从说明页开始实验
 function startFromInstructions() {
   const instructionPage = document.getElementById('instructionPage');
-  if (instructionPage) {
-    instructionPage.style.display = 'none';
-  }
+  if (instructionPage) instructionPage.style.display = 'none';
   startDrawingTask();
-}
-
-// 保存被试信息到 Pavlovia
-function saveParticipantInfo() {
-  // 使用 PsychoJS 保存到服务器（如果可用）
-  if (psychoJS && psychoJS.experiment) {
-    try {
-      psychoJS.experiment.addData('participant_id', experimentData.participantInfo.id);
-      psychoJS.experiment.addData('name', experimentData.participantInfo.name);
-      psychoJS.experiment.addData('age', experimentData.participantInfo.age);
-      psychoJS.experiment.addData('start_time', experimentData.startTime);
-      psychoJS.experiment.addData('trial_type', 'participant_info');
-      psychoJS.experiment.nextEntry();
-      console.log('被试信息已保存到 Pavlovia');
-    } catch (error) {
-      console.error('保存被试信息错误:', error);
-    }
-  } else {
-    console.log('PsychoJS 未可用，使用本地存储');
-  }
-  
-  // 备用：也保存到 localStorage 作为备份
-  try {
-    localStorage.setItem(
-      `participant_info_${experimentData.participantInfo.id}`,
-      JSON.stringify({
-        id: experimentData.participantInfo.id,
-        name: experimentData.participantInfo.name,
-        age: experimentData.participantInfo.age,
-        start_time: experimentData.startTime
-      })
-    );
-    console.log('被试信息已保存到本地 localStorage');
-  } catch (error) {
-    console.error('本地保存错误:', error);
-  }
 }
 
 // 初始化绘制界面
@@ -251,7 +227,7 @@ function initDrawingInterface() {
   // 初始化颜色矩阵
   initColorMatrix();
   
-  // 设置画布大小
+  // 调整画布大小
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
   
@@ -263,7 +239,7 @@ function initDrawingInterface() {
   canvas.addEventListener('wheel', handleWheel, { passive: false });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   
-  // 触摸事件（移动设备）
+  // 触摸事件
   canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
   canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
   canvas.addEventListener('touchend', handleTouchEnd);
@@ -283,12 +259,7 @@ function resizeCanvas() {
   canvas.width = size;
   canvas.height = size;
   
-  console.log(`Canvas 尺寸设置为: ${size}px`);
-  
-  // 立即绘制画布
-  if (colorMatrix) {
-    drawCanvas();
-  }
+  if (colorMatrix) drawCanvas();
 }
 
 // 初始化颜色矩阵
@@ -309,14 +280,10 @@ function startDrawingTask() {
   if (instructionPage) instructionPage.style.display = 'none';
   if (drawingInterface) drawingInterface.style.display = 'block';
   
-  // 设置实验状态
   inDrawingPhase = true;
   experimentSubmitted = false;
   
-  // 重新设置画布大小
   resizeCanvas();
-  
-  // 清空画布并绘制初始状态
   clearCanvas();
   
   console.log('绘制任务开始');
@@ -326,7 +293,7 @@ function startDrawingTask() {
 function drawCanvas() {
   if (!canvas || !ctx) return;
   
-  // 清空画布 - 黑色背景
+  // 黑色背景
   ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   
@@ -334,7 +301,7 @@ function drawCanvas() {
   const centerY = canvas.height / 2;
   const radius = canvas.width / 2 - 10;
   
-  // 绘制白色圆盘背景
+  // 白色圆盘背景
   ctx.fillStyle = '#ffffff';
   ctx.beginPath();
   ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
@@ -349,7 +316,6 @@ function drawCanvas() {
       const dy = y - centerY;
       const dist = Math.sqrt(dx * dx + dy * dy);
       
-      // 只在圆盘内绘制
       if (dist <= radius) {
         const matrixX = Math.floor((x / canvas.width) * matrixSize);
         const matrixY = Math.floor((y / canvas.height) * matrixSize);
@@ -357,13 +323,11 @@ function drawCanvas() {
         if (matrixX >= 0 && matrixX < matrixSize && matrixY >= 0 && matrixY < matrixSize) {
           const value = colorMatrix[matrixY][matrixX];
           const idx = (y * canvas.width + x) * 4;
-          // 初始值为 0 时显示白色（255），有绘制时显示红色
-          const redValue = Math.max(0, 255 - value);
-          const greenBlueValue = Math.max(0, 255 - value);
-          imageData.data[idx] = 255;     // R（白色底，加上绘制时的红色）
-          imageData.data[idx + 1] = greenBlueValue;     // G（减少以显示红色）
-          imageData.data[idx + 2] = greenBlueValue;     // B（减少以显示红色）
-          imageData.data[idx + 3] = 255;   // A
+          // 初始白色，绘制时显示红色
+          imageData.data[idx] = 255;                    // R
+          imageData.data[idx + 1] = Math.max(0, 255 - value);   // G
+          imageData.data[idx + 2] = Math.max(0, 255 - value);   // B
+          imageData.data[idx + 3] = 255;                // A
         }
       }
     }
@@ -371,14 +335,14 @@ function drawCanvas() {
   
   ctx.putImageData(imageData, 0, 0);
   
-  // 重新绘制白色圆圈边界
+  // 圆框边界
   ctx.strokeStyle = '#999999';
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
   ctx.stroke();
   
-  // 绘制画笔预览
+  // 画笔预览
   if (showBrushPreview && mouseX > 0 && mouseY > 0) {
     ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
     ctx.lineWidth = 2;
@@ -408,7 +372,6 @@ function applyGaussianBrush(x, y, mode) {
       const my = Math.floor(matrixY + dy);
       
       if (mx >= 0 && mx < matrixSize && my >= 0 && my < matrixSize) {
-        // 检查是否在圆环内
         const canvasX = (mx / matrixSize) * canvas.width;
         const canvasY = (my / matrixSize) * canvas.height;
         const distFromCenter = Math.sqrt(
@@ -420,7 +383,7 @@ function applyGaussianBrush(x, y, mode) {
           const matrixSigma = (sigma / canvas.width) * matrixSize;
           const gaussian = Math.exp(-(dist * dist) / (2 * matrixSigma * matrixSigma));
           
-          const intensity = gaussian * 25; // 减半强度
+          const intensity = gaussian * 25;
           
           if (mode === 'add') {
             colorMatrix[my][mx] = Math.min(255, colorMatrix[my][mx] + intensity);
@@ -435,17 +398,15 @@ function applyGaussianBrush(x, y, mode) {
   drawCanvas();
 }
 
-// 鼠标事件处理
+// 鼠标事件 - 双击切换模式
 function handleMouseDown(e) {
-  // 检测双击
   const now = Date.now();
   const timeDiff = now - lastClickTime;
   
   if (timeDiff < 300 && timeDiff > 0) {
-    // 双击了
     e.preventDefault();
     toggleDrawMode();
-    console.log('改变模式为: ' + (drawMode === 'add' ? '绘制' : '减淡'));
+    console.log('切换模式为: ' + (drawMode === 'add' ? '绘制' : '减淡'));
     lastClickTime = 0;
     if (clickTimeout) clearTimeout(clickTimeout);
     return;
@@ -453,13 +414,12 @@ function handleMouseDown(e) {
   
   lastClickTime = now;
   
-  // 设置一个超时重置
   if (clickTimeout) clearTimeout(clickTimeout);
   clickTimeout = setTimeout(() => {
     lastClickTime = 0;
   }, 300);
   
-  if (e.button !== 0) return; // 只响应左键
+  if (e.button !== 0) return;
   e.preventDefault();
   
   isDrawing = true;
@@ -509,7 +469,7 @@ function handleWheel(e) {
   drawCanvas();
 }
 
-// 触摸事件处理（移动设备）
+// 触摸事件
 function handleTouchStart(e) {
   e.preventDefault();
   const touch = e.touches[0];
@@ -538,9 +498,8 @@ function handleTouchEnd(e) {
   isDrawing = false;
 }
 
-// 键盘事件处理
+// 键盘事件
 function handleKeyDown(e) {
-  // 只在绘制界面显示时才响应
   const drawingInterface = document.getElementById('drawingInterface');
   if (!drawingInterface || drawingInterface.style.display !== 'block') {
     return;
@@ -566,7 +525,7 @@ function clearCanvas() {
   drawCanvas();
 }
 
-// 切换绘制模式（移动设备）
+// 切换绘制模式
 function toggleDrawMode() {
   drawMode = drawMode === 'add' ? 'subtract' : 'add';
   const btn = document.getElementById('modeBtn');
@@ -580,8 +539,7 @@ function toggleDrawMode() {
 }
 
 // 确认绘制
-function confirmDrawing() {
-  // 防止重复提交
+async function confirmDrawing() {
   if (experimentSubmitted) {
     console.log('数据已提交，请勿重复提交');
     return;
@@ -595,53 +553,59 @@ function confirmDrawing() {
   
   console.log('绘制完成，保存数据...');
   
-  // 禁用所有按钮
+  // 禁用按钮
   const buttons = document.querySelectorAll('.control-btn');
   buttons.forEach(btn => btn.disabled = true);
   
-  // 保存颜色矩阵
-  saveColorMatrix();
+  // 保存数据
+  await saveDrawingData();
   
-  // 显示完成页面（而非弹窗）
+  // 显示完成页
   setTimeout(() => {
     showCompletionPage();
   }, 500);
   
-  console.log('实验数据：', experimentData);
+  console.log('实验数据:', experimentData);
 }
 
-// 保存颜色矩阵到 Pavlovia
-function saveColorMatrix() {
-  console.log('开始保存颜色矩阵...');
+// 保存绘制数据
+async function saveDrawingData() {
+  console.log('开始保存绘制数据...');
   
-  // 使用 PsychoJS 保存到服务器（如果可用）
   if (psychoJS && psychoJS.experiment) {
     try {
+      // 转换矩阵为 JSON 字符串
       const matrixJSON = JSON.stringify(colorMatrix);
+      
+      // 添加数据到 PsychoJS
       psychoJS.experiment.addData('drawing_matrix', matrixJSON);
       psychoJS.experiment.addData('end_time', experimentData.endTime);
       psychoJS.experiment.addData('matrix_size', matrixSize);
       psychoJS.experiment.addData('trial_type', 'drawing_data');
+      
+      // 推进到下一行
       psychoJS.experiment.nextEntry();
       
+      // 保存到服务器
       if (psychoJS.experiment.save) {
-        psychoJS.experiment.save().then(() => {
-          console.log('颜色矩阵已成功保存到 Pavlovia');
-        }).catch((error) => {
-          console.error('保存到 Pavlovia 失败:', error);
-        });
+        await psychoJS.experiment.save();
+        console.log('✓ 数据已成功保存到 Pavlovia 服务器');
+      } else {
+        console.log('⚠ PsychoJS 不支持直接保存，数据已格式化待上传');
       }
+      
     } catch (error) {
       console.error('保存数据错误:', error);
     }
   } else {
-    console.log('PsychoJS 未可用，使用本地存储');
+    console.log('⚠ PsychoJS 不可用，使用本地存储模式');
   }
   
-  // 备用：保存到 localStorage
+  // 备用：本地存储
   try {
     const sparseData = {};
     let nonZeroCount = 0;
+    
     for (let i = 0; i < matrixSize; i++) {
       for (let j = 0; j < matrixSize; j++) {
         if (colorMatrix[i][j] > 0) {
@@ -661,16 +625,13 @@ function saveColorMatrix() {
         end_time: experimentData.endTime
       })
     );
-    console.log(`颜色矩阵已保存到本地 localStorage (${nonZeroCount} 个非零元素)`);
+    console.log(`✓ 本地存储: ${nonZeroCount} 个非零元素已保存`);
   } catch (error) {
-    console.error('本地保存错误:', error);
+    console.error('本地存储错误:', error);
   }
 }
 
-// 注意：数据现在直接保存到 Pavlovia 服务器
-// 实验开发者可以通过 Pavlovia dashboard 下载 results
-
-// 显示实验完成页面
+// 显示完成页面
 function showCompletionPage() {
   const drawingInterface = document.getElementById('drawingInterface');
   const completionPage = document.getElementById('completionPage');
@@ -678,9 +639,9 @@ function showCompletionPage() {
   if (drawingInterface) drawingInterface.style.display = 'none';
   if (completionPage) completionPage.style.display = 'flex';
   
-  console.log('显示实验完成页面');
+  console.log('实验完成，显示完成页面');
   
-  // 5秒后尝试退出实验
+  // 5 秒后尝试退出
   setTimeout(() => {
     if (psychoJS && psychoJS.quit) {
       psychoJS.quit();
@@ -688,11 +649,10 @@ function showCompletionPage() {
   }, 5000);
 }
 
-// 导出函数供外部调用
+// 导出全局函数
 window.submitInfo = submitInfo;
 window.showInstructionPage = showInstructionPage;
 window.startFromInstructions = startFromInstructions;
-window.showCompletionPage = showCompletionPage;
 window.clearCanvas = clearCanvas;
 window.confirmDrawing = confirmDrawing;
 window.toggleDrawMode = toggleDrawMode;
