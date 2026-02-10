@@ -40,8 +40,18 @@ function initPsychoJS() {
     debug: true
   });
   
-  // 不打开窗口，我们使用自定义界面
-  psychoJS.experimentLogger.setLevel(psychoJS.logging.EXP);
+  // 设置实验名称和数据文件路径
+  psychoJS.setRedirectUrls(
+    'https://pavlovia.org',  // 完成后跳转
+    'https://pavlovia.org'   // 取消后跳转
+  );
+  
+  // 开始实验
+  psychoJS.start({
+    expName: experimentData.expName,
+    expInfo: expInfo,
+    resources: []
+  });
   
   console.log('PsychoJS 初始化完成');
 }
@@ -52,12 +62,10 @@ document.addEventListener('DOMContentLoaded', function() {
   experimentData.startTime = new Date().toISOString();
   
   // 初始化 PsychoJS
-  initPsychoJS();
-  
-  // 检测移动设备
-  if (isMobileDevice()) {
-    document.getElementById('mobileControls').style.display = 'flex';
-    document.getElementById('mobileInstructions').style.display = 'inline';
+  try {
+    initPsychoJS();
+  } catch (error) {
+    console.error('PsychoJS 初始化失败:', error);
   }
   
   // 添加输入框的回车事件监听
@@ -70,8 +78,17 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
   
-  // 初始化绘制界面
-  initDrawingInterface();
+  // 初始化绘制界面（延迟初始化，确保 DOM 完全加载）
+  setTimeout(() => {
+    initDrawingInterface();
+    // 检测移动设备
+    if (isMobileDevice()) {
+      const mobileControls = document.getElementById('mobileControls');
+      const mobileInstructions = document.getElementById('mobileInstructions');
+      if (mobileControls) mobileControls.style.display = 'flex';
+      if (mobileInstructions) mobileInstructions.style.display = 'inline';
+    }
+  }, 100);
 });
 
 // 检测是否为移动设备
@@ -148,37 +165,38 @@ function submitInfo() {
   }, 2000);
 }
 
-// 保存被试信息到 CSV
+// 保存被试信息到 Pavlovia
 function saveParticipantInfo() {
-  const csvContent = 'participant_id,name,age,start_time\n' +
-    `${experimentData.participantInfo.id},${experimentData.participantInfo.name},${experimentData.participantInfo.age},${experimentData.startTime}`;
-  
-  // 使用 PsychoJS 保存
-  if (psychoJS) {
+  // 使用 PsychoJS 保存到服务器
+  if (psychoJS && psychoJS.experiment) {
     psychoJS.experiment.addData('participant_id', experimentData.participantInfo.id);
     psychoJS.experiment.addData('name', experimentData.participantInfo.name);
     psychoJS.experiment.addData('age', experimentData.participantInfo.age);
     psychoJS.experiment.addData('start_time', experimentData.startTime);
+    psychoJS.experiment.addData('trial_type', 'participant_info');
     psychoJS.experiment.nextEntry();
+    console.log('被试信息已保存到 Pavlovia');
+  } else {
+    console.warn('PsychoJS 未正确初始化，数据未保存');
   }
-  
-  // 同时下载本地备份
-  downloadCSV(csvContent, `participant_${experimentData.participantInfo.id}_info.csv`);
-  
-  console.log('被试信息已保存');
 }
 
 // 初始化绘制界面
 function initDrawingInterface() {
   canvas = document.getElementById('drawingCanvas');
+  if (!canvas) {
+    console.error('Canvas 元素未找到');
+    return;
+  }
+  
   ctx = canvas.getContext('2d', { willReadFrequently: true });
+  
+  // 初始化颜色矩阵
+  initColorMatrix();
   
   // 设置画布大小
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
-  
-  // 初始化颜色矩阵
-  initColorMatrix();
   
   // 绑定事件
   canvas.addEventListener('mousedown', handleMouseDown);
@@ -195,15 +213,22 @@ function initDrawingInterface() {
   
   // 键盘事件
   document.addEventListener('keydown', handleKeyDown);
+  
+  console.log('绘制界面初始化完成');
 }
 
 // 调整画布大小
 function resizeCanvas() {
+  if (!canvas) return;
+  
   const size = Math.min(window.innerWidth, window.innerHeight) * 0.7;
   canvasSize = size;
   canvas.width = size;
   canvas.height = size;
   
+  console.log(`Canvas 尺寸设置为: ${size}px`);
+  
+  // 立即绘制画布
   if (colorMatrix) {
     drawCanvas();
   }
@@ -219,10 +244,16 @@ function initColorMatrix() {
 
 // 开始绘制任务
 function startDrawingTask() {
-  document.getElementById('root').style.display = 'none';
-  document.getElementById('drawingInterface').style.display = 'block';
+  const root = document.getElementById('root');
+  const drawingInterface = document.getElementById('drawingInterface');
   
-  // 清空画布
+  if (root) root.style.display = 'none';
+  if (drawingInterface) drawingInterface.style.display = 'block';
+  
+  // 重新设置画布大小
+  resizeCanvas();
+  
+  // 清空画布并绘制初始状态
   clearCanvas();
   
   console.log('绘制任务开始');
@@ -413,9 +444,16 @@ function handleTouchEnd(e) {
 
 // 键盘事件处理
 function handleKeyDown(e) {
+  // 只在绘制界面显示时才响应
+  const drawingInterface = document.getElementById('drawingInterface');
+  if (!drawingInterface || drawingInterface.style.display !== 'block') {
+    return;
+  }
+  
   if (e.code === 'Space') {
     e.preventDefault();
     clearCanvas();
+    console.log('画布已清空');
   } else if (e.code === 'Enter') {
     e.preventDefault();
     confirmDrawing();
@@ -424,9 +462,12 @@ function handleKeyDown(e) {
 
 // 清空画布
 function clearCanvas() {
+  if (!canvas || !ctx) {
+    console.error('Canvas 未初始化');
+    return;
+  }
   initColorMatrix();
   drawCanvas();
-  console.log('画布已清空');
 }
 
 // 切换绘制模式（移动设备）
@@ -458,49 +499,28 @@ function confirmDrawing() {
   console.log('实验数据：', experimentData);
 }
 
-// 保存颜色矩阵
+// 保存颜色矩阵到 Pavlovia
 function saveColorMatrix() {
-  // 将矩阵转换为 CSV 格式
-  let csvContent = '';
-  for (let i = 0; i < matrixSize; i++) {
-    csvContent += colorMatrix[i].join(',') + '\n';
-  }
-  
-  // 使用 PsychoJS 保存
-  if (psychoJS) {
+  // 使用 PsychoJS 保存到服务器
+  if (psychoJS && psychoJS.experiment) {
+    // 保存完整的矩阵数据（JSON 格式）
     psychoJS.experiment.addData('drawing_matrix', JSON.stringify(colorMatrix));
     psychoJS.experiment.addData('end_time', experimentData.endTime);
     psychoJS.experiment.addData('matrix_size', matrixSize);
+    psychoJS.experiment.addData('trial_type', 'drawing_data');
     psychoJS.experiment.nextEntry();
     
-    // 保存实验
-    psychoJS.experiment.save({
-      attributes: experimentData
-    });
+    // 保存实验数据到服务器
+    psychoJS.experiment.save();
+    
+    console.log('颜色矩阵已保存到 Pavlovia');
+  } else {
+    console.error('PsychoJS 未正确初始化，数据未保存');
   }
-  
-  // 下载 CSV 文件
-  downloadCSV(csvContent, `participant_${experimentData.participantInfo.id}_drawing.csv`);
-  
-  console.log('颜色矩阵已保存');
 }
 
-// 下载 CSV 文件
-function downloadCSV(content, filename) {
-  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  const url = URL.createObjectURL(blob);
-  
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename);
-  link.style.visibility = 'hidden';
-  
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  
-  console.log(`文件已下载: ${filename}`);
-}
+// 注意：数据现在直接保存到 Pavlovia 服务器
+// 实验开发者可以通过 Pavlovia dashboard 下载 results
 
 // 导出函数供外部调用
 window.submitInfo = submitInfo;
