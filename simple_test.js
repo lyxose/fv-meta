@@ -42,6 +42,9 @@ let showBrushPreview = true;
 let experimentSubmitted = false;
 let lastClickTime = 0;
 let clickTimeout = null;
+// 多次绘制相关变量
+let drawingCount = 1; // 1, 2, 3
+let allDrawingMatrices = []; // 存储三次的绘制矩阵
 
 // 启动 PsychoJS
 psychoJS.start({
@@ -168,7 +171,71 @@ function showInstructionPage() {
 function startFromInstructions() {
   const instructionPage = document.getElementById('instructionPage');
   if (instructionPage) instructionPage.style.display = 'none';
-  startDrawingTask();
+  showComprehensionCheckPage();
+}
+
+// 显示理解检验页
+function showComprehensionCheckPage() {
+  const instructionPage = document.getElementById('instructionPage');
+  const comprehensionCheckPage = document.getElementById('comprehensionCheckPage');
+  
+  if (instructionPage) instructionPage.style.display = 'none';
+  if (comprehensionCheckPage) comprehensionCheckPage.style.display = 'flex';
+  
+  document.getElementById('submitComprehensionBtn').onclick = checkComprehension;
+  console.log('📝 显示理解检验页');
+}
+
+// 检验理解答案
+function checkComprehension() {
+  const q1 = document.querySelector('input[name="q1"]:checked');
+  const q2 = document.querySelector('input[name="q2"]:checked');
+  const q3 = document.querySelector('input[name="q3"]:checked');
+  
+  const feedback = document.getElementById('comprehensionFeedback');
+  
+  if (!q1 || !q2 || !q3) {
+    feedback.style.display = 'block';
+    feedback.style.backgroundColor = '#f8d7da';
+    feedback.style.color = '#721c24';
+    feedback.style.border = '1px solid #f5c6cb';
+    feedback.innerHTML = '<strong>❌ 请完成所有题目</strong>';
+    return;
+  }
+  
+  // 正确答案：B, B, C
+  const q1Value = Array.from(document.querySelectorAll('input[name="q1"]')).indexOf(q1);
+  const q2Value = Array.from(document.querySelectorAll('input[name="q2"]')).indexOf(q2);
+  const q3Value = Array.from(document.querySelectorAll('input[name="q3"]')).indexOf(q3);
+  
+  if (q1Value === 1 && q2Value === 1 && q3Value === 2) {
+    feedback.style.display = 'block';
+    feedback.style.backgroundColor = '#d4edda';
+    feedback.style.color = '#155724';
+    feedback.style.border = '1px solid #c3e6cb';
+    feedback.innerHTML = '<strong>✓ 答案正确！</strong><br>即将进入绘制任务...';
+    console.log('✓ 理解检验通过');
+    
+    setTimeout(() => {
+      startDrawingTask();
+    }, 1500);
+  } else {
+    feedback.style.display = 'block';
+    feedback.style.backgroundColor = '#f8d7da';
+    feedback.style.color = '#721c24';
+    feedback.style.border = '1px solid #f5c6cb';
+    feedback.innerHTML = '<strong>❌ 答案有误，请重新阅读说明</strong><br>3秒后返回说明页面...';
+    console.log('✗ 理解检验未通过');
+    
+    document.querySelectorAll('input[type="radio"]').forEach(input => input.checked = false);
+    
+    setTimeout(() => {
+      const comprehensionCheckPage = document.getElementById('comprehensionCheckPage');
+      const instructionPage = document.getElementById('instructionPage');
+      if (comprehensionCheckPage) comprehensionCheckPage.style.display = 'none';
+      if (instructionPage) instructionPage.style.display = 'flex';
+    }, 3000);
+  }
 }
 
 // 初始化绘制界面
@@ -220,18 +287,33 @@ function initColorMatrix() {
 function startDrawingTask() {
   const root = document.getElementById('root');
   const instructionPage = document.getElementById('instructionPage');
+  const comprehensionCheckPage = document.getElementById('comprehensionCheckPage');
   const drawingInterface = document.getElementById('drawingInterface');
   
   if (root) root.style.display = 'none';
   if (instructionPage) instructionPage.style.display = 'none';
+  if (comprehensionCheckPage) comprehensionCheckPage.style.display = 'none';
   if (drawingInterface) drawingInterface.style.display = 'block';
   
   experimentSubmitted = false;
+  drawingCount = 1;
+  allDrawingMatrices = [];
   
   resizeCanvas();
   clearCanvas();
+  updateDrawingPrompt();
   
-  console.log('🎨 绘制任务开始');
+  console.log('🎨 绘制任务开始 - 第1次');
+}
+
+// 更新绘制任务提示
+function updateDrawingPrompt() {
+  const instructionsDiv = document.querySelector('.instructions');
+  if (instructionsDiv) {
+    instructionsDiv.innerHTML = `<strong>任务进度：${drawingCount}/3</strong><br>
+      请绘制密度分布图<br>
+      <span style="font-size:11px;">(完成后按回车或点确认)</span>`;
+  }
 }
 
 function drawCanvas() {
@@ -493,44 +575,125 @@ async function confirmDrawing() {
     return;
   }
   
-  experimentSubmitted = true;
+  console.log(`✏️ 第${drawingCount}次绘制完成，保存数据...`);
   
-  console.log('✏️ 绘制完成，保存数据...');
+  // 保存当前绘制矩阵的副本
+  const matrixCopy = colorMatrix.map(row => [...row]);
+  allDrawingMatrices.push(matrixCopy);
   
-  // 立即禁用所有按钮和键盘输入
+  // 禁用所有按钮
   const buttons = document.querySelectorAll('.control-btn');
   buttons.forEach(btn => btn.disabled = true);
   
-  // 立即显示"正在保存"页面
-  showSavingPage();
-  
-  // 后台异步保存数据
-  try {
-    const matrixJSON = JSON.stringify(colorMatrix);
-    psychoJS.experiment.addData('drawing_matrix', matrixJSON);
-    psychoJS.experiment.addData('matrix_size', matrixSize);
-    psychoJS.experiment.addData('trial_type', 'drawing_data');
-    psychoJS.experiment.addData('drawing_time', util.MonotonicClock.getDateStr());
-    psychoJS.experiment.nextEntry();
+  if (drawingCount < 3) {
+    // 还有更多绘制任务
+    drawingCount++;
     
-    // 保存到 Pavlovia 服务器
-    await psychoJS.experiment.save();
-    console.log('✓ 数据已成功保存到 Pavlovia 服务器');
+    // 显示间隔页面
+    showDrawingIntervalPage();
     
-    // 保存成功后更新页面显示
-    updateSavingPageSuccess();
-    
-    // 1.5秒后自动退出
     setTimeout(() => {
-      psychoJS.quit({message: 'Thank you for your patience.', isCompleted: true});
-    }, 1500);
+      // 清空画布，继续下一次绘制
+      initColorMatrix();
+      drawCanvas();
+      updateDrawingPrompt();
+      
+      // 重新启用按钮
+      buttons.forEach(btn => btn.disabled = false);
+      
+      const intervalPage = document.getElementById('drawingIntervalPage');
+      if (intervalPage) intervalPage.style.display = 'none';
+      
+      console.log(`🎨 开始第${drawingCount}次绘制`);
+    }, 2000);
+  } else {
+    // 所有绘制任务完成，准备上传
+    experimentSubmitted = true;
     
-  } catch (error) {
-    console.error('❌ 保存数据错误:', error);
-    updateSavingPageError(error);
+    // 计算三次绘制的变异性
+    const variability = calculateVariability(allDrawingMatrices);
+    console.log(`📊 三次绘制变异性: ${variability.toFixed(4)}`);
+    
+    // 显示"正在保存"页面
+    showSavingPage();
+    
+    // 后台异步保存数据
+    try {
+      const matrixJSON = JSON.stringify(allDrawingMatrices);
+      psychoJS.experiment.addData('drawing_matrices', matrixJSON);
+      psychoJS.experiment.addData('matrix_size', matrixSize);
+      psychoJS.experiment.addData('drawing_count', 3);
+      psychoJS.experiment.addData('drawings_variability', variability);
+      psychoJS.experiment.addData('trial_type', 'drawing_data');
+      psychoJS.experiment.addData('drawing_time', util.MonotonicClock.getDateStr());
+      psychoJS.experiment.nextEntry();
+      
+      // 保存到 Pavlovia 服务器
+      await psychoJS.experiment.save();
+      console.log('✓ 数据已成功保存到 Pavlovia 服务器');
+      
+      // 保存成功后更新页面显示
+      updateSavingPageSuccess();
+      
+      // 1.5秒后自动退出
+      setTimeout(() => {
+        psychoJS.quit({message: 'Thank you for your patience.', isCompleted: true});
+      }, 1500);
+      
+    } catch (error) {
+      console.error('❌ 保存数据错误:', error);
+      updateSavingPageError(error);
+    }
+    
+    console.log('📊 实验数据已完整保存');
+  }
+}
+
+// 显示绘制间隔页
+function showDrawingIntervalPage() {
+  const drawingInterface = document.getElementById('drawingInterface');
+  const intervalPage = document.getElementById('drawingIntervalPage');
+  
+  if (drawingInterface) drawingInterface.style.opacity = '0.3';
+  
+  if (intervalPage) {
+    intervalPage.style.display = 'flex';
+    const content = intervalPage.querySelector('.interval-content');
+    if (content) {
+      content.innerHTML = `
+        <h2>第${drawingCount}次绘制</h2>
+        <p>请根据您的直觉，重新绘制刚刚相同的密度分布图。</p>
+        <p style="font-size: 14px; color: #666;">这是为了验证您绘制的一致性。</p>
+      `;
+    }
   }
   
-  console.log('📊 实验数据已完整保存');
+  console.log(`⏳ 显示第${drawingCount}次绘制准备页`);
+}
+
+// 计算三次绘制的变异性
+function calculateVariability(matrices) {
+  if (matrices.length < 2) return 0;
+  
+  let totalDifference = 0;
+  let cellCount = 0;
+  
+  // 计算相邻两次绘制之间的平均差异
+  for (let t = 0; t < matrices.length - 1; t++) {
+    let iteration_difference = 0;
+    for (let i = 0; i < matrixSize; i++) {
+      for (let j = 0; j < matrixSize; j++) {
+        const diff = Math.abs(matrices[t][i][j] - matrices[t + 1][i][j]);
+        iteration_difference += diff;
+      }
+    }
+    totalDifference += iteration_difference;
+    cellCount += matrixSize * matrixSize;
+  }
+  
+  // 返回平均差异值 (0-255范围内的标准化值)
+  const meanDifference = totalDifference / cellCount;
+  return meanDifference;
 }
 
 // 保存绘制数据
@@ -664,6 +827,8 @@ function showCompletionPage() {
 window.submitInfo = submitInfo;
 window.showInstructionPage = showInstructionPage;
 window.startFromInstructions = startFromInstructions;
+window.showComprehensionCheckPage = showComprehensionCheckPage;
+window.checkComprehension = checkComprehension;
 window.clearCanvas = clearCanvas;
 window.confirmDrawing = confirmDrawing;
 window.toggleDrawMode = toggleDrawMode;
