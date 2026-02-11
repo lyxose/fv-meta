@@ -32,7 +32,7 @@ const psychoJS = new PsychoJS({
 let canvas, ctx;
 let isDrawing = false;
 let drawMode = 'add'; // 'add' or 'subtract'
-let brushSize = 30;
+let brushSize = 15;
 let colorMatrix = null;
 let canvasSize = 0;
 let matrixSize = 256;
