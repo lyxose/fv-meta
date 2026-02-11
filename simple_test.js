@@ -204,9 +204,9 @@ function checkComprehension() {
   const q2 = document.querySelector('input[name="q2"]:checked');
   const q3 = document.querySelector('input[name="q3"]:checked');
   
-  console.log('Q1 checked:', q1 ? 'Yes' : 'No');
-  console.log('Q2 checked:', q2 ? 'Yes' : 'No');
-  console.log('Q3 checked:', q3 ? 'Yes' : 'No');
+  console.log('Q1 checked:', q1 ? `Yes (value: ${q1.value})` : 'No');
+  console.log('Q2 checked:', q2 ? `Yes (value: ${q2.value})` : 'No');
+  console.log('Q3 checked:', q3 ? `Yes (value: ${q3.value})` : 'No');
   
   const feedback = document.getElementById('comprehensionFeedback');
   
@@ -220,14 +220,10 @@ function checkComprehension() {
     return;
   }
   
-  // 正确答案：B, B, C
-  const q1Value = Array.from(document.querySelectorAll('input[name="q1"]')).indexOf(q1);
-  const q2Value = Array.from(document.querySelectorAll('input[name="q2"]')).indexOf(q2);
-  const q3Value = Array.from(document.querySelectorAll('input[name="q3"]')).indexOf(q3);
+  // 正确答案：q1=b, q2=b, q3=c
+  console.log(`答案: Q1=${q1.value}, Q2=${q2.value}, Q3=${q3.value}`);
   
-  console.log(`答案: Q1=${q1Value}, Q2=${q2Value}, Q3=${q3Value}`);
-  
-  if (q1Value === 1 && q2Value === 1 && q3Value === 2) {
+  if (q1.value === 'b' && q2.value === 'b' && q3.value === 'c') {
     feedback.style.display = 'block';
     feedback.style.backgroundColor = '#d4edda';
     feedback.style.color = '#155724';
