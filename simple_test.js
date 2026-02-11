@@ -45,6 +45,8 @@ let clickTimeout = null;
 // 多次绘制相关变量
 let drawingCount = 1; // 1, 2, 3
 let allDrawingMatrices = []; // 存储三次的绘制矩阵
+let currentNotification = null; // 存储当前显示的提示框
+let enableBrushSizeAdjust = false; // 开关：是否允许调整画笔大小
 
 // 启动 PsychoJS
 psychoJS.start({
@@ -322,7 +324,6 @@ function updateDrawingPrompt() {
   if (instructionsDiv) {
     instructionsDiv.innerHTML = `<strong>操作提示：</strong><br>
       选择绘制/减淡模式<br>
-      滚轮：调节画笔大小<br>
       空格：清空画布<br>
       回车：确认提交`;
   }
@@ -499,6 +500,9 @@ function handleMouseLeave() {
 
 function handleWheel(e) {
   e.preventDefault();
+  // 滚轮调整画笔大小功能已关闭
+  if (!enableBrushSizeAdjust) return;
+  
   
   if (e.deltaY < 0) {
     brushSize = Math.min(100, brushSize + 5);
@@ -594,16 +598,22 @@ async function confirmDrawing() {
   allDrawingMatrices.push(matrixCopy);
   
   if (drawingCount < 3) {
-    // 还有更多绘制任务
+    // 立即清空画布，防止被试记忆
+    initColorMatrix();
+    drawCanvas();
+    
     drawingCount++;
     
-    // 显示间隔页面
+    // 显示间隔页面提示
     showDrawingIntervalPage();
     
     setTimeout(() => {
-      // 清空画布，继续下一次绘制
-      initColorMatrix();
-      drawCanvas();
+      // 2秒后移除提示框，继续下一次绘制
+      if (currentNotification && currentNotification.parentNode) {
+        currentNotification.remove();
+        currentNotification = null;
+      }
+      
       updateDrawingPrompt();
       
       const intervalPage = document.getElementById('drawingIntervalPage');
@@ -656,9 +666,8 @@ async function confirmDrawing() {
 
 // 显示绘制间隔页
 function showDrawingIntervalPage() {
-  // 在左上角创建过渡提示
-  const notification = document.createElement('div');
-  notification.style.cssText = `
+  currentNotification = document.createElement('div');
+  currentNotification.style.cssText = `
     position: fixed;
     top: 10px;
     left: 10px;
@@ -674,15 +683,8 @@ function showDrawingIntervalPage() {
     text-align: left;
     box-shadow: 0 2px 10px rgba(0,0,0,0.2);
   `;
-  notification.textContent = '请再次绘制';
-  document.body.appendChild(notification);
-  
-  // 2秒后自动移除
-  setTimeout(() => {
-    if (notification && notification.parentNode) {
-      notification.remove();
-    }
-  }, 2000);
+  currentNotification.innerHTML = '请再次绘制<br>以确认答案';
+  document.body.appendChild(currentNotification);
   
   console.log(`⏳ 显示第${drawingCount}次绘制准备页`);
 }
