@@ -620,7 +620,7 @@ async function confirmDrawing() {
       if (intervalPage) intervalPage.style.display = 'none';
       
       console.log(`🎨 开始第${drawingCount}次绘制`);
-    }, 2000);
+    }, 6000);
   } else {
     // 所有绘制任务完成，准备上传
     experimentSubmitted = true;
