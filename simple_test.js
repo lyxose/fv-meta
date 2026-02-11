@@ -571,16 +571,16 @@ function showCompletionPage() {
   
   console.log('✅ 实验完成，显示完成页面');
   
-  // 5 秒后尝试退出
+  // 5 秒后退出
   setTimeout(() => {
-    if (psychoJS && psychoJS.quit) {
-      console.log('👋 正在退出 Pavlovia 实验...');
-      psychoJS.quit();
-    } else {
-      console.log('ℹ️  实验完成。请关闭此窗口。');
-    }
-  }, 5000退出
-  setTimeout(() => {
-    psychoJS.quit({message: 'Thank you for your patience.', isCompleted: true});w.clearCanvas = clearCanvas;
+    psychoJS.quit({message: 'Thank you for your patience.', isCompleted: true});
+  }, 5000);
+}
+
+// 导出全局函数
+window.submitInfo = submitInfo;
+window.showInstructionPage = showInstructionPage;
+window.startFromInstructions = startFromInstructions;
+window.clearCanvas = clearCanvas;
 window.confirmDrawing = confirmDrawing;
 window.toggleDrawMode = toggleDrawMode;
