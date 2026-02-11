@@ -149,7 +149,8 @@ function submitInfo() {
     即将显示实验说明...
   `;
   
-  document.querySelectorAll('input').forEach(input => input.disabled = true);
+  // 只禁用文本输入框，不禁用单选框
+  document.querySelectorAll('input[type="text"]').forEach(input => input.disabled = true);
   document.querySelector('button').disabled = true;
   
   setTimeout(() => {
