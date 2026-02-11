@@ -320,9 +320,11 @@ function startDrawingTask() {
 function updateDrawingPrompt() {
   const instructionsDiv = document.querySelector('.instructions');
   if (instructionsDiv) {
-    instructionsDiv.innerHTML = `<strong>任务进度：${drawingCount}/3</strong><br>
-      请绘制密度分布图<br>
-      <span style="font-size:11px;">(完成后按回车或点确认)</span>`;
+    instructionsDiv.innerHTML = `<strong>操作提示：</strong><br>
+      选择绘制/减淡模式<br>
+      滚轮：调节画笔大小<br>
+      空格：清空画布<br>
+      回车：确认提交`;
   }
 }
 
@@ -654,17 +656,33 @@ async function confirmDrawing() {
 
 // 显示绘制间隔页
 function showDrawingIntervalPage() {
-  const intervalPage = document.getElementById('drawingIntervalPage');
+  // 在左上角创建过渡提示
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    color: #333;
+    background: rgba(255,255,255,0.95);
+    padding: 15px;
+    border-radius: 5px;
+    border: 1px solid #ddd;
+    font-size: 14px;
+    font-weight: bold;
+    max-width: 250px;
+    z-index: 1001;
+    text-align: left;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+  `;
+  notification.textContent = '请再次绘制';
+  document.body.appendChild(notification);
   
-  if (intervalPage) {
-    intervalPage.style.display = 'flex';
-    const content = intervalPage.querySelector('.interval-content');
-    if (content) {
-      content.innerHTML = `
-        <h2 style="color:#007bff;margin-bottom:0;font-size:28px;">请再次绘制</h2>
-      `;
+  // 2秒后自动移除
+  setTimeout(() => {
+    if (notification && notification.parentNode) {
+      notification.remove();
     }
-  }
+  }, 2000);
   
   console.log(`⏳ 显示第${drawingCount}次绘制准备页`);
 }
