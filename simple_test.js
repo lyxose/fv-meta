@@ -149,9 +149,9 @@ function submitInfo() {
     即将显示实验说明...
   `;
   
-  // 只禁用文本输入框，不禁用单选框
-//   document.querySelectorAll('input[type="text"]').forEach(input => input.disabled = true);
-//   document.querySelector('button').disabled = true;
+  // 只禁用当前页面的按钮
+  const infoButton = document.querySelector('.content-box button');
+  if (infoButton) infoButton.disabled = true;
   
   setTimeout(() => {
     showInstructionPage();
@@ -203,15 +203,13 @@ function checkComprehension() {
   
   const q1 = document.querySelector('input[name="q1"]:checked');
   const q2 = document.querySelector('input[name="q2"]:checked');
-  const q3 = document.querySelector('input[name="q3"]:checked');
   
   console.log('Q1 checked:', q1 ? `Yes (value: ${q1.value})` : 'No');
   console.log('Q2 checked:', q2 ? `Yes (value: ${q2.value})` : 'No');
-  console.log('Q3 checked:', q3 ? `Yes (value: ${q3.value})` : 'No');
   
   const feedback = document.getElementById('comprehensionFeedback');
   
-  if (!q1 || !q2 || !q3) {
+  if (!q1 || !q2) {
     feedback.style.display = 'block';
     feedback.style.backgroundColor = '#f8d7da';
     feedback.style.color = '#721c24';
@@ -221,10 +219,10 @@ function checkComprehension() {
     return;
   }
   
-  // 正确答案：q1=b, q2=b, q3=c
-  console.log(`答案: Q1=${q1.value}, Q2=${q2.value}, Q3=${q3.value}`);
+  // 正确答案：q1=b, q2=b
+  console.log(`答案: Q1=${q1.value}, Q2=${q2.value}`);
   
-  if (q1.value === 'b' && q2.value === 'b' && q3.value === 'c') {
+  if (q1.value === 'b' && q2.value === 'b') {
     feedback.style.display = 'block';
     feedback.style.backgroundColor = '#d4edda';
     feedback.style.color = '#155724';
@@ -669,19 +667,14 @@ async function confirmDrawing() {
 function showDrawingIntervalPage() {
   const drawingInterface = document.getElementById('drawingInterface');
   const intervalPage = document.getElementById('drawingIntervalPage');
-  
-  if (drawingInterface) drawingInterface.style.opacity = '0.3';
+  intervalPage = document.getElementById('drawingIntervalPage');
   
   if (intervalPage) {
     intervalPage.style.display = 'flex';
     const content = intervalPage.querySelector('.interval-content');
     if (content) {
       content.innerHTML = `
-        <h2>第${drawingCount}次绘制</h2>
-        <p>请根据您的直觉，重新绘制刚刚相同的密度分布图。</p>
-        <p style="font-size: 14px; color: #666;">这是为了验证您绘制的一致性。</p>
-      `;
-    }
+        <h2 style="color:#007bff;margin-bottom:0;font-size:28px;">请再次绘制</h2
   }
   
   console.log(`⏳ 显示第${drawingCount}次绘制准备页`);
