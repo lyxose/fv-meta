@@ -270,30 +270,51 @@
     </style>
   </head>
   <body>
-    <div id="root">
+    
+    <!-- 知情同意书弹窗 -->
+    <div id="consentModal" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.5);z-index:2000;display:flex;align-items:center;justify-content:center;">
+      <div style="background:#fff;padding:36px 32px 24px 32px;border-radius:12px;max-width:600px;width:92vw;box-shadow:0 2px 16px rgba(0,0,0,0.18);font-size:16px;line-height:1.7;color:#333;">
+        <h2 style="text-align:center;margin-bottom:18px;font-size:24px;">在线实验知情同意书</h2>
+        <div style="max-height:48vh;overflow-y:auto;margin-bottom:18px;">
+          <p><strong>研究目的</strong><br>
+          您今天参加的实验是中国科学院心理研究所视觉与注意实验室研究计划的一部分。该计划主要探讨与人类视觉加工有关的心理活动。</p>
+          <p><strong>研究程序</strong><br>
+          整个实验过程中，您只需要按照要求在电脑屏幕上完成相关操作并作出反应。</p>
+          <p><strong>风险/不适</strong><br>
+          参与本实验是完全自愿的，您可以在任何时候按自己的意愿退出实验。在实验过程中，我们建议您尽量保持注意力集中，避免长时间连续操作，如有不适可随时暂停或退出实验。实验过程中不会收集您的音视频信息。</p>
+          <p><strong>参与的自愿性与机密性</strong><br>
+          参与本实验是完全自愿的，您可以在任何时候退出实验。实验所得到的科学资料，可能会发表在学术期刊，但不会包含您的姓名或任何可识别身份的信息。所有数据将以编号方式匿名保存，依法严格保密。</p>
+          <p><strong>费用/报酬</strong><br>
+          参与此项实验的报酬为每小时50元人民币，具体金额将根据任务成绩调整。</p>
+          <p><strong>协议书说明</strong><br>
+          点击“我同意”即表示：<br>
+          1）我已阅读并理解上述内容；<br>
+          2）我知晓参与完全自愿，可随时退出且不会受到任何惩罚；<br>
+          3）我知晓本研究收集的信息将严格保密，不会以任何可识别个人身份的方式公开，除非法律要求。</p>
+        </div>
+        <button id="consentAgreeBtn" style="width:100%;padding:14px 0;background:#007bff;color:#fff;border:none;border-radius:6px;font-size:18px;cursor:pointer;">我同意</button>
+      </div>
+    </div>
+
+    <div id="root" style="display:none;">
       <div class="content-box">
-        <h1 class="welcome-text">欢迎参加在线实验测试</h1>
+        <h1 class="welcome-text">欢迎参加本次在线心理学研究测试</h1>
         <p class="description">
           请在下方输入框中填写您的信息，然后点击提交按钮。
         </p>
-        
         <div class="input-group">
           <label for="participantId">被试编号：</label>
           <input type="text" id="participantId" placeholder="请输入您的被试编号">
         </div>
-        
         <div class="input-group">
           <label for="participantName">姓名：</label>
           <input type="text" id="participantName" placeholder="请输入您的姓名">
         </div>
-        
         <div class="input-group">
           <label for="participantAge">年龄：</label>
           <input type="text" id="participantAge" placeholder="请输入您的年龄">
         </div>
-        
         <button onclick="submitInfo()">提交信息</button>
-        
         <div class="result-message" id="resultMessage">
           信息提交成功！感谢您的参与。
         </div>
@@ -381,6 +402,18 @@
     <script src="https://cdn.jsdelivr.net/npm/jquery-ui-dist@1.12.1/jquery-ui.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/preloadjs@1.0.1/lib/preloadjs.min.js"></script>
     <!-- experiment -->
+    <script>
+      // 知情同意书逻辑
+      document.addEventListener('DOMContentLoaded', function() {
+        var consentModal = document.getElementById('consentModal');
+        var rootDiv = document.getElementById('root');
+        var agreeBtn = document.getElementById('consentAgreeBtn');
+        agreeBtn.onclick = function() {
+          consentModal.style.display = 'none';
+          rootDiv.style.display = '';
+        };
+      });
+    </script>
     <script src="./simple_test.js" type="module"></script>
   </body>
 </html>
