@@ -11,6 +11,7 @@ const { Scheduler } = util;
 let expName = 'simple_test';
 let expInfo = {
     'participant': `${util.pad(Number.parseFloat(util.randint(0, 999999)).toFixed(0), 6)}`,
+    'participant': `${util.pad(Number.parseFloat(util.randint(0, 999999)).toFixed(0), 6)}`,
     'session': '001',
 };
 let PILOTING = util.getUrlParameters().has('__pilotToken');
@@ -20,13 +21,12 @@ const psychoJS = new PsychoJS({
   debug: true
 });
 
-// 实验数据容器
-let experimentData = {
-  startTime: null,
-  endTime: null,
-  participantInfo: {},
-  drawingData: null
-};
+// 设置数据文件路径和格式
+expInfo['date'] = util.MonotonicClock.getDateStr();
+expInfo['expName'] = expName;
+expInfo['OS'] = window.navigator.platform;
+psychoJS.experiment.dataFileName = (("." + "/") + `data/${expInfo["participant"]}_${expName}_${expInfo["date"]}`);
+psychoJS.experiment.field_separator = '\t';
 
 // 绘制相关变量
 let canvas, ctx;
@@ -36,17 +36,10 @@ let brushSize = 30;
 let colorMatrix = null;
 let canvasSize = 0;
 let matrixSize = 256;
-
-// 鼠标位置
 let mouseX = 0;
 let mouseY = 0;
 let showBrushPreview = true;
-
-// 实验状态
 let experimentSubmitted = false;
-let inDrawingPhase = false;
-
-// 双击控制
 let lastClickTime = 0;
 let clickTimeout = null;
 
@@ -84,7 +77,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // 初始化绘制界面
   setTimeout(() => {
     initDrawingInterface();
-  }, 100);
+  }
 });
 
 // 提交被试信息
@@ -93,7 +86,6 @@ function submitInfo() {
   const participantName = document.getElementById('participantName').value.trim();
   const participantAge = document.getElementById('participantAge').value.trim();
   
-  // 验证
   if (!participantId || !participantName || !participantAge) {
     alert('请填写所有字段！');
     return;
@@ -152,11 +144,9 @@ function submitInfo() {
     即将显示实验说明...
   `;
   
-  // 禁用按钮
   document.querySelectorAll('input').forEach(input => input.disabled = true);
   document.querySelector('button').disabled = true;
   
-  // 显示说明页
   setTimeout(() => {
     showInstructionPage();
   }, 2000);
@@ -173,7 +163,6 @@ function showInstructionPage() {
   console.log('📖 显示实验说明页');
 }
 
-// 从说明页开始实验
 function startFromInstructions() {
   const instructionPage = document.getElementById('instructionPage');
   if (instructionPage) instructionPage.style.display = 'none';
@@ -183,17 +172,11 @@ function startFromInstructions() {
 // 初始化绘制界面
 function initDrawingInterface() {
   canvas = document.getElementById('drawingCanvas');
-  if (!canvas) {
-    console.error('Canvas 元素未找到');
-    return;
-  }
+  if (!canvas) return;
   
   ctx = canvas.getContext('2d', { willReadFrequently: true });
   
-  // 初始化颜色矩阵
   initColorMatrix();
-  
-  // 调整画布大小
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
   
@@ -205,18 +188,15 @@ function initDrawingInterface() {
   canvas.addEventListener('wheel', handleWheel, { passive: false });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   
-  // 触摸事件
   canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
   canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
   canvas.addEventListener('touchend', handleTouchEnd);
   
-  // 键盘事件
   document.addEventListener('keydown', handleKeyDown);
   
-  console.log('绘制界面初始化完成');
+  console.log('✓ 绘制界面初始化完成');
 }
 
-// 调整画布大小
 function resizeCanvas() {
   if (!canvas) return;
   
@@ -228,7 +208,6 @@ function resizeCanvas() {
   if (colorMatrix) drawCanvas();
 }
 
-// 初始化颜色矩阵
 function initColorMatrix() {
   colorMatrix = new Array(matrixSize);
   for (let i = 0; i < matrixSize; i++) {
@@ -236,7 +215,6 @@ function initColorMatrix() {
   }
 }
 
-// 开始绘制任务
 function startDrawingTask() {
   const root = document.getElementById('root');
   const instructionPage = document.getElementById('instructionPage');
@@ -246,7 +224,6 @@ function startDrawingTask() {
   if (instructionPage) instructionPage.style.display = 'none';
   if (drawingInterface) drawingInterface.style.display = 'block';
   
-  inDrawingPhase = true;
   experimentSubmitted = false;
   
   resizeCanvas();
@@ -255,11 +232,9 @@ function startDrawingTask() {
   console.log('🎨 绘制任务开始');
 }
 
-// 绘制画布
 function drawCanvas() {
   if (!canvas || !ctx) return;
   
-  // 黑色背景
   ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   
@@ -267,13 +242,11 @@ function drawCanvas() {
   const centerY = canvas.height / 2;
   const radius = canvas.width / 2 - 10;
   
-  // 白色圆盘背景
   ctx.fillStyle = '#ffffff';
   ctx.beginPath();
   ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
   ctx.fill();
   
-  // 绘制颜色矩阵
   const imageData = ctx.createImageData(canvas.width, canvas.height);
   
   for (let y = 0; y < canvas.height; y++) {
@@ -289,11 +262,10 @@ function drawCanvas() {
         if (matrixX >= 0 && matrixX < matrixSize && matrixY >= 0 && matrixY < matrixSize) {
           const value = colorMatrix[matrixY][matrixX];
           const idx = (y * canvas.width + x) * 4;
-          // 初始白色，绘制时显示红色
-          imageData.data[idx] = 255;                    // R
-          imageData.data[idx + 1] = Math.max(0, 255 - value);   // G
-          imageData.data[idx + 2] = Math.max(0, 255 - value);   // B
-          imageData.data[idx + 3] = 255;                // A
+          imageData.data[idx] = 255;
+          imageData.data[idx + 1] = Math.max(0, 255 - value);
+          imageData.data[idx + 2] = Math.max(0, 255 - value);
+          imageData.data[idx + 3] = 255;
         }
       }
     }
@@ -301,14 +273,12 @@ function drawCanvas() {
   
   ctx.putImageData(imageData, 0, 0);
   
-  // 圆框边界
   ctx.strokeStyle = '#999999';
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
   ctx.stroke();
   
-  // 画笔预览
   if (showBrushPreview && mouseX > 0 && mouseY > 0) {
     ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
     ctx.lineWidth = 2;
@@ -318,7 +288,6 @@ function drawCanvas() {
   }
 }
 
-// 应用高斯画笔
 function applyGaussianBrush(x, y, mode) {
   const centerX = canvas.width / 2;
   const centerY = canvas.height / 2;
@@ -372,7 +341,7 @@ function handleMouseDown(e) {
   if (timeDiff < 300 && timeDiff > 0) {
     e.preventDefault();
     toggleDrawMode();
-    console.log('切换模式为: ' + (drawMode === 'add' ? '绘制' : '减淡'));
+    console.log('✏️ 切换模式为: ' + (drawMode === 'add' ? '绘制' : '减淡'));
     lastClickTime = 0;
     if (clickTimeout) clearTimeout(clickTimeout);
     return;
@@ -431,11 +400,10 @@ function handleWheel(e) {
     brushSize = Math.max(5, brushSize - 5);
   }
   
-  console.log(`画笔大小: ${brushSize}px`);
+  console.log(`🖌️ 画笔大小: ${brushSize}px`);
   drawCanvas();
 }
 
-// 触摸事件
 function handleTouchStart(e) {
   e.preventDefault();
   const touch = e.touches[0];
@@ -464,7 +432,6 @@ function handleTouchEnd(e) {
   isDrawing = false;
 }
 
-// 键盘事件
 function handleKeyDown(e) {
   const drawingInterface = document.getElementById('drawingInterface');
   if (!drawingInterface || drawingInterface.style.display !== 'block') {
@@ -474,14 +441,13 @@ function handleKeyDown(e) {
   if (e.code === 'Space') {
     e.preventDefault();
     clearCanvas();
-    console.log('画布已清空');
+    console.log('🗑️ 画布已清空');
   } else if (e.code === 'Enter') {
     e.preventDefault();
     confirmDrawing();
   }
 }
 
-// 清空画布
 function clearCanvas() {
   if (!canvas || !ctx) {
     console.error('Canvas 未初始化');
@@ -491,7 +457,6 @@ function clearCanvas() {
   drawCanvas();
 }
 
-// 切换绘制模式
 function toggleDrawMode() {
   drawMode = drawMode === 'add' ? 'subtract' : 'add';
   const btn = document.getElementById('modeBtn');
@@ -504,27 +469,34 @@ function toggleDrawMode() {
   }
 }
 
-// 确认绘制
 async function confirmDrawing() {
   if (experimentSubmitted) {
-    console.log('⚠️  数据已提交，请勿重复提交');
+    console.log('⚠️ 数据已提交，请勿重复提交');
     return;
   }
   
   experimentSubmitted = true;
-  inDrawingPhase = false;
   
-  experimentData.endTime = new Date().toISOString();
-  experimentData.drawingData = colorMatrix;
+  console.log('✏️ 绘制完成，保存数据...');
   
-  console.log('✏️  绘制完成，保存数据...');
-  
-  // 禁用按钮
   const buttons = document.querySelectorAll('.control-btn');
   buttons.forEach(btn => btn.disabled = true);
   
-  // 保存数据
-  await saveDrawingData();
+  // 保存绘制数据到 PsychoJS
+  const matrixJSON = JSON.stringify(colorMatrix);
+  psychoJS.experiment.addData('drawing_matrix', matrixJSON);
+  psychoJS.experiment.addData('matrix_size', matrixSize);
+  psychoJS.experiment.addData('trial_type', 'drawing_data');
+  psychoJS.experiment.addData('drawing_time', util.MonotonicClock.getDateStr());
+  psychoJS.experiment.nextEntry();
+  
+  // 保存到 Pavlovia 服务器
+  try {
+    await psychoJS.experiment.save();
+    console.log('✓ 数据已成功保存到 Pavlovia 服务器');
+  } catch (error) {
+    console.error('❌ 保存数据错误:', error);
+  }
   
   // 显示完成页
   setTimeout(() => {
