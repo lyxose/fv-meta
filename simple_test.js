@@ -48,32 +48,17 @@ psychoJS.start({
   expName: expName,
   expInfo: expInfo,
   resources: []
+}).then(() => {
+  // psychoJS.start() 完成后，experiment 已经初始化
+  expInfo['date'] = util.MonotonicClock.getDateStr();
+  expInfo['expName'] = expName;
+  expInfo['OS'] = window.navigator.platform;
+  psychoJS.experiment.dataFileName = (("." + "/") + `data/${expInfo["participant"]}_${expName}_${expInfo["date"]}`);
+  psychoJS.experiment.field_separator = '\t';
+  console.log('✓ PsychoJS 启动完成，数据文件名已设置:', psychoJS.experiment.dataFileName);
 });
 
 psychoJS.experimentLogger.setLevel(core.Logger.ServerLevel.INFO);
-
-// 调试：检查 psychoJS.experiment 是否存在
-console.log('🔍 调试信息：');
-console.log('psychoJS:', psychoJS);
-console.log('psychoJS.experiment:', psychoJS.experiment);
-console.log('typeof psychoJS.experiment:', typeof psychoJS.experiment);
-
-// 页面加载完成后设置数据文件名（延迟执行）
-setTimeout(() => {
-  console.log('⏰ 延迟后检查：');
-  console.log('psychoJS.experiment:', psychoJS.experiment);
-  
-  if (psychoJS.experiment) {
-    expInfo['date'] = util.MonotonicClock.getDateStr();
-    expInfo['expName'] = expName;
-    expInfo['OS'] = window.navigator.platform;
-    psychoJS.experiment.dataFileName = (("." + "/") + `data/${expInfo["participant"]}_${expName}_${expInfo["date"]}`);
-    psychoJS.experiment.field_separator = '\t';
-    console.log('✓ 数据文件名设置成功:', psychoJS.experiment.dataFileName);
-  } else {
-    console.error('❌ psychoJS.experiment 仍然未定义');
-  }
-}, 1000);
 
 // 页面加载完成
 document.addEventListener('DOMContentLoaded', function() {
