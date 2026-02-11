@@ -48,6 +48,11 @@ let allDrawingMatrices = []; // 存储三次的绘制矩阵
 let currentNotification = null; // 存储当前显示的提示框
 let enableBrushSizeAdjust = false; // 开关：是否允许调整画笔大小
 
+// 绘制时长检验参数和变量
+const minDrawingTime = 6000; // 首次绘制最少需要的操作时长（毫秒）
+let totalDrawingActivityTime = 0; // 累计绘制活动时长（毫秒）
+let activityStartTime = null; // 当前操作块的开始时间
+
 // 启动 PsychoJS
 psychoJS.start({
   expName: expName,
@@ -311,6 +316,10 @@ function startDrawingTask() {
   drawingCount = 1;
   allDrawingMatrices = [];
   
+  // 重置绘制时长计时器（仅首次绘制需要）
+  totalDrawingActivityTime = 0;
+  activityStartTime = null;
+  
   resizeCanvas();
   clearCanvas();
   updateDrawingPrompt();
@@ -464,6 +473,11 @@ function handleMouseDown(e) {
   if (e.button !== 0) return;
   e.preventDefault();
   
+  // 记录操作块开始时间（仅第一次绘制需要计时）
+  if (drawingCount === 1 && !isDrawing && activityStartTime === null) {
+    activityStartTime = Date.now();
+  }
+  
   isDrawing = true;
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left;
@@ -487,6 +501,12 @@ function handleMouseMove(e) {
 }
 
 function handleMouseUp() {
+  // 累计绘制活动时长（仅第一次绘制需要计时）
+  if (drawingCount === 1 && isDrawing && activityStartTime !== null) {
+    totalDrawingActivityTime += Date.now() - activityStartTime;
+    activityStartTime = null;
+  }
+  
   isDrawing = false;
 }
 
@@ -521,6 +541,11 @@ function handleTouchStart(e) {
   mouseX = touch.clientX - rect.left;
   mouseY = touch.clientY - rect.top;
   
+  // 记录操作块开始时间（仅第一次绘制需要计时）
+  if (drawingCount === 1 && !isDrawing && activityStartTime === null) {
+    activityStartTime = Date.now();
+  }
+  
   isDrawing = true;
   applyGaussianBrush(mouseX, mouseY, drawMode);
 }
@@ -539,6 +564,13 @@ function handleTouchMove(e) {
 
 function handleTouchEnd(e) {
   e.preventDefault();
+  
+  // 累计绘制活动时长（仅第一次绘制需要计时）
+  if (drawingCount === 1 && isDrawing && activityStartTime !== null) {
+    totalDrawingActivityTime += Date.now() - activityStartTime;
+    activityStartTime = null;
+  }
+  
   isDrawing = false;
 }
 
@@ -591,6 +623,16 @@ async function confirmDrawing() {
     return;
   }
   
+  // 首次绘制需要检查最小操作时长
+  if (drawingCount === 1) {
+    if (totalDrawingActivityTime < minDrawingTime) {
+      showInsufficientTimeWarning();
+      console.log(`⏱️ 绘制时长不足：${totalDrawingActivityTime}ms，需要 ${minDrawingTime}ms`);
+      return;
+    }
+    console.log(`✓ 绘制时长足够：${totalDrawingActivityTime}ms`);
+  }
+  
   console.log(`✏️ 第${drawingCount}次绘制完成，保存数据...`);
   
   // 保存当前绘制矩阵的副本
@@ -604,11 +646,15 @@ async function confirmDrawing() {
     
     drawingCount++;
     
+    // 重置绘制时长计时器（后续轮次无需计时）
+    totalDrawingActivityTime = 0;
+    activityStartTime = null;
+    
     // 显示间隔页面提示
     showDrawingIntervalPage();
     
     setTimeout(() => {
-      // 2秒后移除提示框，继续下一次绘制
+      // minDrawingTime 毫秒后移除提示框，继续下一次绘制
       if (currentNotification && currentNotification.parentNode) {
         currentNotification.remove();
         currentNotification = null;
@@ -620,7 +666,7 @@ async function confirmDrawing() {
       if (intervalPage) intervalPage.style.display = 'none';
       
       console.log(`🎨 开始第${drawingCount}次绘制`);
-    }, 6000);
+    }, minDrawingTime);
   } else {
     // 所有绘制任务完成，准备上传
     experimentSubmitted = true;
@@ -639,6 +685,7 @@ async function confirmDrawing() {
       psychoJS.experiment.addData('matrix_size', matrixSize);
       psychoJS.experiment.addData('drawing_count', 3);
       psychoJS.experiment.addData('drawings_variability', variability);
+      psychoJS.experiment.addData('first_drawing_duration', totalDrawingActivityTime);
       psychoJS.experiment.addData('trial_type', 'drawing_data');
       psychoJS.experiment.addData('drawing_time', util.MonotonicClock.getDateStr());
       psychoJS.experiment.nextEntry();
@@ -664,7 +711,40 @@ async function confirmDrawing() {
   }
 }
 
+// 显示绘制时长不足的错误提示
+function showInsufficientTimeWarning() {
+  const warning = document.createElement('div');
+  warning.style.cssText = `
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 0, 0, 0.95);
+    color: #fff;
+    padding: 15px 30px;
+    border-radius: 5px;
+    font-size: 16px;
+    font-weight: bold;
+    z-index: 2000;
+    max-width: 80%;
+    text-align: center;
+    box-shadow: 0 2px 15px rgba(0,0,0,0.3);
+  `;
+  warning.innerHTML = '请认真完成绘制再提交！';
+  document.body.appendChild(warning);
+  
+  // 3秒后自动移除
+  setTimeout(() => {
+    if (warning.parentNode) {
+      warning.remove();
+    }
+  }, 3000);
+  
+  console.log('⚠️ 显示绘制时长不足警告');
+}
+
 // 显示绘制间隔页
+
 function showDrawingIntervalPage() {
   currentNotification = document.createElement('div');
   currentNotification.style.cssText = `
