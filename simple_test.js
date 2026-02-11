@@ -150,8 +150,8 @@ function submitInfo() {
   `;
   
   // 只禁用文本输入框，不禁用单选框
-  document.querySelectorAll('input[type="text"]').forEach(input => input.disabled = true);
-  document.querySelector('button').disabled = true;
+//   document.querySelectorAll('input[type="text"]').forEach(input => input.disabled = true);
+//   document.querySelector('button').disabled = true;
   
   setTimeout(() => {
     showInstructionPage();
