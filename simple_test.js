@@ -28,13 +28,6 @@ const psychoJS = new PsychoJS({
   debug: true
 });
 
-// 设置数据文件路径和格式
-expInfo['date'] = util.MonotonicClock.getDateStr();
-expInfo['expName'] = expName;
-expInfo['OS'] = window.navigator.platform;
-psychoJS.experiment.dataFileName = (("." + "/") + `data/${expInfo["participant"]}_${expName}_${expInfo["date"]}`);
-psychoJS.experiment.field_separator = '\t';
-
 // 绘制相关变量
 let canvas, ctx;
 let isDrawing = false;
@@ -59,9 +52,10 @@ psychoJS.start({
 
 psychoJS.experimentLogger.setLevel(core.Logger.ServerLevel.INFO);
 
-// 设置数据文件名
+// 页面加载完成后设置数据文件名
 expInfo['date'] = util.MonotonicClock.getDateStr();
 expInfo['expName'] = expName;
+expInfo['OS'] = window.navigator.platform;
 psychoJS.experiment.dataFileName = (("." + "/") + `data/${expInfo["participant"]}_${expName}_${expInfo["date"]}`);
 psychoJS.experiment.field_separator = '\t';
 
