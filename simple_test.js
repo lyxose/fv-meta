@@ -180,17 +180,33 @@ function showComprehensionCheckPage() {
   const comprehensionCheckPage = document.getElementById('comprehensionCheckPage');
   
   if (instructionPage) instructionPage.style.display = 'none';
-  if (comprehensionCheckPage) comprehensionCheckPage.style.display = 'flex';
   
-  document.getElementById('submitComprehensionBtn').onclick = checkComprehension;
+  // 等待 DOM 完全渲染后再绑定事件
+  setTimeout(() => {
+    if (comprehensionCheckPage) {
+      comprehensionCheckPage.style.display = 'flex';
+    }
+    const submitBtn = document.getElementById('submitComprehensionBtn');
+    if (submitBtn) {
+      submitBtn.onclick = checkComprehension;
+      console.log('✓ 理解检验提交按钮事件绑定成功');
+    }
+  }, 50);
+  
   console.log('📝 显示理解检验页');
 }
 
 // 检验理解答案
 function checkComprehension() {
+  console.log('🔍 开始检查理解题答案...');
+  
   const q1 = document.querySelector('input[name="q1"]:checked');
   const q2 = document.querySelector('input[name="q2"]:checked');
   const q3 = document.querySelector('input[name="q3"]:checked');
+  
+  console.log('Q1 checked:', q1 ? 'Yes' : 'No');
+  console.log('Q2 checked:', q2 ? 'Yes' : 'No');
+  console.log('Q3 checked:', q3 ? 'Yes' : 'No');
   
   const feedback = document.getElementById('comprehensionFeedback');
   
@@ -200,6 +216,7 @@ function checkComprehension() {
     feedback.style.color = '#721c24';
     feedback.style.border = '1px solid #f5c6cb';
     feedback.innerHTML = '<strong>❌ 请完成所有题目</strong>';
+    console.log('⚠️ 有未完成的题目');
     return;
   }
   
@@ -207,6 +224,8 @@ function checkComprehension() {
   const q1Value = Array.from(document.querySelectorAll('input[name="q1"]')).indexOf(q1);
   const q2Value = Array.from(document.querySelectorAll('input[name="q2"]')).indexOf(q2);
   const q3Value = Array.from(document.querySelectorAll('input[name="q3"]')).indexOf(q3);
+  
+  console.log(`答案: Q1=${q1Value}, Q2=${q2Value}, Q3=${q3Value}`);
   
   if (q1Value === 1 && q2Value === 1 && q3Value === 2) {
     feedback.style.display = 'block';
@@ -225,7 +244,7 @@ function checkComprehension() {
     feedback.style.color = '#721c24';
     feedback.style.border = '1px solid #f5c6cb';
     feedback.innerHTML = '<strong>❌ 答案有误，请重新阅读说明</strong><br>3秒后返回说明页面...';
-    console.log('✗ 理解检验未通过');
+    console.log('✗ 理解检验未通过，返回说明页');
     
     document.querySelectorAll('input[type="radio"]').forEach(input => input.checked = false);
     
