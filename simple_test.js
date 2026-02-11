@@ -440,6 +440,12 @@ function handleKeyDown(e) {
     return;
   }
   
+  // 如果已提交，阻止所有键盘输入
+  if (experimentSubmitted) {
+    e.preventDefault();
+    return;
+  }
+  
   if (e.code === 'Space') {
     e.preventDefault();
     clearCanvas();
@@ -481,29 +487,38 @@ async function confirmDrawing() {
   
   console.log('✏️ 绘制完成，保存数据...');
   
+  // 立即禁用所有按钮和键盘输入
   const buttons = document.querySelectorAll('.control-btn');
   buttons.forEach(btn => btn.disabled = true);
   
-  // 保存绘制数据到 PsychoJS
-  const matrixJSON = JSON.stringify(colorMatrix);
-  psychoJS.experiment.addData('drawing_matrix', matrixJSON);
-  psychoJS.experiment.addData('matrix_size', matrixSize);
-  psychoJS.experiment.addData('trial_type', 'drawing_data');
-  psychoJS.experiment.addData('drawing_time', util.MonotonicClock.getDateStr());
-  psychoJS.experiment.nextEntry();
+  // 立即显示"正在保存"页面
+  showSavingPage();
   
-  // 保存到 Pavlovia 服务器
+  // 后台异步保存数据
   try {
+    const matrixJSON = JSON.stringify(colorMatrix);
+    psychoJS.experiment.addData('drawing_matrix', matrixJSON);
+    psychoJS.experiment.addData('matrix_size', matrixSize);
+    psychoJS.experiment.addData('trial_type', 'drawing_data');
+    psychoJS.experiment.addData('drawing_time', util.MonotonicClock.getDateStr());
+    psychoJS.experiment.nextEntry();
+    
+    // 保存到 Pavlovia 服务器
     await psychoJS.experiment.save();
     console.log('✓ 数据已成功保存到 Pavlovia 服务器');
+    
+    // 保存成功后更新页面显示
+    updateSavingPageSuccess();
+    
+    // 1.5秒后自动退出
+    setTimeout(() => {
+      psychoJS.quit({message: 'Thank you for your patience.', isCompleted: true});
+    }, 1500);
+    
   } catch (error) {
     console.error('❌ 保存数据错误:', error);
+    updateSavingPageError(error);
   }
-  
-  // 显示完成页
-  setTimeout(() => {
-    showCompletionPage();
-  }, 500);
   
   console.log('📊 实验数据已完整保存');
 }
@@ -561,6 +576,62 @@ async function saveDrawingData() {
   } catch (error) {
     console.error('❌ 本地存储错误:', error);
   }
+}
+
+// 显示"正在保存"页面
+function showSavingPage() {
+  const drawingInterface = document.getElementById('drawingInterface');
+  const completionPage = document.getElementById('completionPage');
+  
+  if (drawingInterface) drawingInterface.style.display = 'none';
+  if (completionPage) {
+    completionPage.style.display = 'flex';
+    // 更新内容为"正在保存"
+    const content = completionPage.querySelector('.completion-content');
+    if (content) {
+      content.innerHTML = `
+        <h2 style="color: #007bff;">正在保存数据...</h2>
+        <p>请稍候，不要关闭窗口</p>
+        <div style="margin: 30px 0;">
+          <div style="width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid #007bff; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+        </div>
+      `;
+    }
+  }
+  console.log('💾 显示保存中页面');
+}
+
+// 保存成功后更新页面
+function updateSavingPageSuccess() {
+  const completionPage = document.getElementById('completionPage');
+  if (completionPage) {
+    const content = completionPage.querySelector('.completion-content');
+    if (content) {
+      content.innerHTML = `
+        <h2 style="color: #28a745;">✓ 数据保存成功！</h2>
+        <p>感谢您的参与。</p>
+        <p>窗口将自动关闭...</p>
+      `;
+    }
+  }
+  console.log('✅ 更新页面：保存成功');
+}
+
+// 保存失败后更新页面
+function updateSavingPageError(error) {
+  const completionPage = document.getElementById('completionPage');
+  if (completionPage) {
+    const content = completionPage.querySelector('.completion-content');
+    if (content) {
+      content.innerHTML = `
+        <h2 style="color: #dc3545;">保存失败</h2>
+        <p>数据可能未成功上传到服务器</p>
+        <p style="font-size: 14px; color: #666;">错误信息：${error.message || '未知错误'}</p>
+        <p style="color: #999; font-size: 14px; margin-top: 30px;">请联系实验管理员</p>
+      `;
+    }
+  }
+  console.error('❌ 更新页面：保存失败', error);
 }
 
 // 显示完成页面
