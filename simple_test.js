@@ -149,10 +149,6 @@ function submitInfo() {
     即将显示实验说明...
   `;
   
-  // 只禁用当前页面的按钮
-  const infoButton = document.querySelector('.content-box button');
-  if (infoButton) infoButton.disabled = true;
-  
   setTimeout(() => {
     showInstructionPage();
   }, 2000);
@@ -595,10 +591,6 @@ async function confirmDrawing() {
   const matrixCopy = colorMatrix.map(row => [...row]);
   allDrawingMatrices.push(matrixCopy);
   
-  // 禁用所有按钮
-  const buttons = document.querySelectorAll('.control-btn');
-  buttons.forEach(btn => btn.disabled = true);
-  
   if (drawingCount < 3) {
     // 还有更多绘制任务
     drawingCount++;
@@ -611,9 +603,6 @@ async function confirmDrawing() {
       initColorMatrix();
       drawCanvas();
       updateDrawingPrompt();
-      
-      // 重新启用按钮
-      buttons.forEach(btn => btn.disabled = false);
       
       const intervalPage = document.getElementById('drawingIntervalPage');
       if (intervalPage) intervalPage.style.display = 'none';
@@ -665,16 +654,16 @@ async function confirmDrawing() {
 
 // 显示绘制间隔页
 function showDrawingIntervalPage() {
-  const drawingInterface = document.getElementById('drawingInterface');
   const intervalPage = document.getElementById('drawingIntervalPage');
-  intervalPage = document.getElementById('drawingIntervalPage');
   
   if (intervalPage) {
     intervalPage.style.display = 'flex';
     const content = intervalPage.querySelector('.interval-content');
     if (content) {
       content.innerHTML = `
-        <h2 style="color:#007bff;margin-bottom:0;font-size:28px;">请再次绘制</h2
+        <h2 style="color:#007bff;margin-bottom:0;font-size:28px;">请再次绘制</h2>
+      `;
+    }
   }
   
   console.log(`⏳ 显示第${drawingCount}次绘制准备页`);
