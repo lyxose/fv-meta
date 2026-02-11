@@ -11,10 +11,17 @@ const { Scheduler } = util;
 let expName = 'simple_test';
 let expInfo = {
     'participant': `${util.pad(Number.parseFloat(util.randint(0, 999999)).toFixed(0), 6)}`,
-    'participant': `${util.pad(Number.parseFloat(util.randint(0, 999999)).toFixed(0), 6)}`,
     'session': '001',
 };
 let PILOTING = util.getUrlParameters().has('__pilotToken');
+
+// 实验数据容器
+let experimentData = {
+  startTime: null,
+  endTime: null,
+  participantInfo: {},
+  drawingData: null
+};
 
 // init psychoJS:
 const psychoJS = new PsychoJS({
@@ -77,7 +84,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // 初始化绘制界面
   setTimeout(() => {
     initDrawingInterface();
-  }
+  }, 100);
 });
 
 // 提交被试信息
