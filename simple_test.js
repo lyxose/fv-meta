@@ -610,7 +610,7 @@ function updateSavingPageSuccess() {
       content.innerHTML = `
         <h2 style="color: #28a745;">✓ 数据保存成功！</h2>
         <p>感谢您的参与。</p>
-        <p>窗口将自动关闭...</p>
+        <p style="color: #999; font-size: 14px; margin-top: 30px;">您可以关闭此窗口。</p>
       `;
     }
   }
