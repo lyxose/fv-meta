@@ -303,6 +303,8 @@ function applyGaussianBrush(x, y, mode) {
   
   const matrixBrushRadius = (brushRadius / canvas.width) * matrixSize;
   
+  const proportionRate = 0.15; // 每次调整为剩余/衰退比例的15%
+  
   for (let dy = -matrixBrushRadius * 2; dy <= matrixBrushRadius * 2; dy++) {
     for (let dx = -matrixBrushRadius * 2; dx <= matrixBrushRadius * 2; dx++) {
       const mx = Math.floor(matrixX + dx);
@@ -320,13 +322,21 @@ function applyGaussianBrush(x, y, mode) {
           const matrixSigma = (sigma / canvas.width) * matrixSize;
           const gaussian = Math.exp(-(dist * dist) / (2 * matrixSigma * matrixSigma));
           
-          const intensity = gaussian * 25;
+          const currentValue = colorMatrix[my][mx];
+          let newValue;
           
           if (mode === 'add') {
-            colorMatrix[my][mx] = Math.min(255, colorMatrix[my][mx] + intensity);
+            // 绘制：增加量 = (255 - 当前值) * proportionRate * 高斯权重
+            const remainingCapacity = 255 - currentValue;
+            const increment = remainingCapacity * proportionRate * gaussian;
+            newValue = currentValue + increment;
           } else {
-            colorMatrix[my][mx] = Math.max(0, colorMatrix[my][mx] - intensity);
+            // 减淡：减少量 = 当前值 * proportionRate * 高斯权重
+            const decrement = currentValue * proportionRate * gaussian;
+            newValue = currentValue - decrement;
           }
+          
+          colorMatrix[my][mx] = Math.max(0, Math.min(255, newValue));
         }
       }
     }
