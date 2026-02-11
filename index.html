@@ -188,37 +188,33 @@
         text-align: left;
         max-height: 80vh;
         overflow-y: auto;
-        display: flex !important;
-        align-items: flex-start !important;
-        justify-content: center !important;
-        gap: 24px !important;
       }
       
-      /* 竖屏适配 */
-      @media (max-width: 1024px) {
+      .background-examples {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+        justify-items: center;
+        margin: 20px 0;
+      }
+      
+      .background-examples img {
+        width: 100px;
+        height: 100px;
+        border-radius: 24px;
+        object-fit: cover;
+        box-shadow: 0 2px 8px #ccc;
+      }
+      
+      /* 竖屏适配 (高度 > 宽度) */
+      @media (orientation: portrait) {
         .instruction-content {
-          flex-direction: column !important;
-          align-items: center !important;
-          max-width: 95vw !important;
+          max-width: 95vw;
         }
         
-        .instruction-content > div {
-          width: 100% !important;
-          margin-top: 0 !important;
-        }
-        
-        .instruction-content > div:first-child,
-        .instruction-content > div:last-child {
-          display: flex !important;
-          flex-wrap: wrap !important;
-          gap: 16px !important;
-          justify-content: center !important;
-        }
-        
-        .instruction-content > div:first-child img,
-        .instruction-content > div:last-child img {
-          width: 80px !important;
-          height: 80px !important;
+        .background-examples img {
+          width: 80px;
+          height: 80px;
         }
       }
       
@@ -355,46 +351,37 @@
     
     <!-- 实验说明页 -->
     <div id="instructionPage">
-      <div class="instruction-content" style="display: flex; align-items: flex-start; justify-content: center; gap: 24px;">
-        <!-- 左侧背景示例 -->
-        <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 48px;">
-          <div style="text-align:center; color:#555; font-weight:bold; margin-bottom:4px;">背景示例：</div>
-          <img src="./assets/img/Background1.png" alt="背景示例1" style="width:100px;height:100px;border-radius:24px;object-fit:cover;box-shadow:0 2px 8px #ccc;">
-          <img src="./assets/img/Background2.png" alt="背景示例2" style="width:100px;height:100px;border-radius:24px;object-fit:cover;box-shadow:0 2px 8px #ccc;">
+      <div class="instruction-content">
+        <h2>实验说明</h2>
+        <p>欢迎参加本次实验！</p>
+        <p>
+          有二十多名随机抽取的志愿者参与了一项视觉搜索任务：<br>
+          在背景为所示随机花纹的圆形区域内进行搜索，需要在5秒内找到一个圆形小光斑
+          <img src="./assets/img/Gabor.png" alt="光斑示例" style="vertical-align:middle;width:1.2em;height:1.2em;border-radius:50%;object-fit:cover;margin:0 4px 0 4px;box-shadow:0 2px 8px #ccc;">
+          ，该光斑会随机出现在花纹内的任何位置。
+        </p>
+        <div class="background-examples">
+          <img src="./assets/img/Background1.png" alt="背景示例1">
+          <img src="./assets/img/Background2.png" alt="背景示例2">
+          <img src="./assets/img/Background3.png" alt="背景示例3">
+          <img src="./assets/img/Background4.png" alt="背景示例4">
         </div>
-        <!-- 说明文字及gabor -->
-        <div style="flex:1;min-width:0;">
-          <h2>实验说明</h2>
-          <p>欢迎参加本次实验！</p>
-          <p>
-            有二十多名随机抽取的志愿者参与了一项视觉搜索任务：<br>
-            在背景为所示随机花纹的圆形区域内进行搜索，需要在5秒内找到一个圆形小光斑
-            <img src="./assets/img/Gabor.png" alt="光斑示例" style="vertical-align:middle;width:1.2em;height:1.2em;border-radius:50%;object-fit:cover;margin:0 4px 0 4px;box-shadow:0 2px 8px #ccc;">
-            ，该光斑会随机出现在花纹内的任何位置。
-          </p>
-          <p>请您推测他们搜索过程中的注视点分布，绘制一个密度地图。<br>
-            <span style="color:#d81b60;font-weight:bold;">越红代表注视密度越高，越白代表注视密度越低。</span>
-          </p>
-          <div style="height:10px;"></div>
-          <p><strong>奖励机制：</strong><br>
-            密度图最接近真实数据的前2名将获得高额奖励，其他参与者将获得基础被试费。
-          </p>
-          <p><strong>操作说明：</strong></p>
-          <ul>
-            <li><strong>绘制/减淡：</strong>按钮为绿色的“绘制模式”时，在圆内按住鼠标左键，可以添加红色；灰色“减淡模式”时，可以减少红色。通过在画布内<b>右键双击</b>切换模式</li>
-            <li><strong>调节画笔：</strong>使用鼠标滚轮或双指缩放调节画笔大小</li>
-            <li><strong>清空：</strong>按空格键或点击“清空”按钮可以清空画布</li>
-            <li><strong>提交：</strong>完成后按回车键或点击“确认”按钮提交</li>
-          </ul>
-          <p>请按照您的真实感受进行绘制。</p>
-          <button class="start-btn" onclick="startFromInstructions()">开始实验</button>
-        </div>
-        <!-- 右侧背景示例 -->
-        <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 48px;">
-          <div style="text-align:center; color:#555; font-weight:bold; margin-bottom:4px;">背景示例：</div>
-          <img src="./assets/img/Background3.png" alt="背景示例3" style="width:100px;height:100px;border-radius:24px;object-fit:cover;box-shadow:0 2px 8px #ccc;">
-          <img src="./assets/img/Background4.png" alt="背景示例4" style="width:100px;height:100px;border-radius:24px;object-fit:cover;box-shadow:0 2px 8px #ccc;">
-        </div>
+        <p>请您推测他们搜索过程中的注视点分布，绘制一个密度地图。<br>
+          <span style="color:#d81b60;font-weight:bold;">越红代表注视密度越高，越白代表注视密度越低。</span>
+        </p>
+        <div style="height:10px;"></div>
+        <p><strong>奖励机制：</strong><br>
+          密度图最接近真实数据的前2名将获得高额奖励，其他参与者将获得基础被试费。
+        </p>
+        <p><strong>操作说明：</strong></p>
+        <ul>
+          <li><strong>绘制/减淡：</strong>按钮为绿色的"绘制模式"时，在圆内按住鼠标左键，可以添加红色；灰色"减淡模式"时，可以减少红色。通过在画布内<b>右键双击</b>切换模式</li>
+          <li><strong>调节画笔：</strong>使用鼠标滚轮或双指缩放调节画笔大小</li>
+          <li><strong>清空：</strong>按空格键或点击"清空"按钮可以清空画布</li>
+          <li><strong>提交：</strong>完成后按回车键或点击"确认"按钮提交</li>
+        </ul>
+        <p>请按照您的真实感受进行绘制。</p>
+        <button class="start-btn" onclick="startFromInstructions()">开始实验</button>
       </div>
     </div>
     
