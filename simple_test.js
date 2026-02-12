@@ -332,7 +332,7 @@ function updateDrawingPrompt() {
   const instructionsDiv = document.querySelector('.instructions');
   if (instructionsDiv) {
     instructionsDiv.innerHTML = `<strong>操作提示：</strong><br>
-      选择绘制/减淡模式<br>
+      选择绘制/减淡模式（按钮高亮为当前模式）<br>
       空格：清空画布<br>
       回车：确认提交`;
   }
@@ -606,14 +606,22 @@ function clearCanvas() {
 }
 
 function toggleDrawMode() {
-  drawMode = drawMode === 'add' ? 'subtract' : 'add';
-  const btn = document.getElementById('modeBtn');
-  if (drawMode === 'add') {
-    btn.textContent = '绘制模式';
-    btn.classList.add('active');
-  } else {
-    btn.textContent = '减淡模式';
-    btn.classList.remove('active');
+  const nextMode = drawMode === 'add' ? 'subtract' : 'add';
+  setDrawMode(nextMode);
+}
+
+function setDrawMode(mode) {
+  drawMode = mode === 'subtract' ? 'subtract' : 'add';
+  const addBtn = document.getElementById('addModeBtn');
+  const subtractBtn = document.getElementById('subtractModeBtn');
+  if (addBtn && subtractBtn) {
+    if (drawMode === 'add') {
+      addBtn.classList.add('active');
+      subtractBtn.classList.remove('active');
+    } else {
+      addBtn.classList.remove('active');
+      subtractBtn.classList.add('active');
+    }
   }
 }
 
@@ -930,3 +938,4 @@ window.checkComprehension = checkComprehension;
 window.clearCanvas = clearCanvas;
 window.confirmDrawing = confirmDrawing;
 window.toggleDrawMode = toggleDrawMode;
+window.setDrawMode = setDrawMode;

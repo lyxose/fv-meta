@@ -201,7 +201,7 @@
       .background-examples img {
         width: 130px;
         height: 130px;
-        border-radius: 24px;
+        border-radius: 50%;
         object-fit: cover;
         box-shadow: 0 2px 8px #ccc;
       }
@@ -393,16 +393,16 @@
         </div>
         <p>
           现在，请您根据自己的直觉，猜一猜这些人在找小圆点的过程中，眼睛会更多地看哪些地方，哪些地方看得少。<br>
-          请用画笔在圆圈里画出您觉得大家“看得多”的区域。<br>
-          <span style="color:#d81b60;font-weight:bold;">颜色越红，表示这个地方被看得越多；越白，表示看得越少。</span>
+          请用画笔在中央圆盘里通过涂色画出您猜测的注视分布图。<br>
+          <span style="color:#d81b60;font-weight:bold;">颜色越红，表示您认为这个地方被看得越多；越白，表示看得越少。</span>
         </p>
         <div style="height:10px;"></div>
         <p>
-          请尽量精确地绘制您推测的分布图。
+          <strong>请尽量精确地绘制您推测的分布图。</strong>
         </p>
         <p><strong>操作说明：</strong></p>
         <ul>
-          <li><strong>绘制/减淡：</strong>按钮是绿色“绘制模式”时，在圆圈里按住鼠标左键可以加深红色；按钮是灰色“减淡模式”时，可以减淡红色。可以在画布里<b>右键双击</b>切换模式。</li>
+          <li><strong>绘制/减淡：</strong>使用“绘制”和“减淡”两个按钮切换模式；当前激活的按钮会高亮显示。也可以在画布里<b>右键双击</b>切换模式。</li>
           <!-- <li><strong>调节画笔：</strong>用鼠标滚轮或双指缩放可以调整画笔大小。</li> -->
           <li><strong>清空：</strong>按空格键或点“清空”按钮可以清空画布。</li>
           <li><strong>提交：</strong>完成后按回车键或点“确认”按钮提交。</li>
@@ -433,7 +433,7 @@
     <div id="drawingInterface">
       <div class="instructions">
         <strong>操作提示：</strong><br>
-        选择绘制/减淡模式<br>
+        选择绘制/减淡模式（按钮高亮为当前模式）<br>
         滚轮：调节画笔大小<br>
         空格：清空画布<br>
         回车：确认提交
@@ -444,7 +444,8 @@
       </div>
       
       <div class="controls">
-        <button class="control-btn mode-btn active" id="modeBtn" onclick="toggleDrawMode()">绘制模式</button>
+        <button class="control-btn mode-btn active" id="addModeBtn" onclick="setDrawMode('add')">绘制</button>
+        <button class="control-btn mode-btn" id="subtractModeBtn" onclick="setDrawMode('subtract')">减淡</button>
         <button class="control-btn clear-btn" onclick="clearCanvas()">清空</button>
         <button class="control-btn confirm-btn" onclick="confirmDrawing()">确认</button>
       </div>
