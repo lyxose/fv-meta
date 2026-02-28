@@ -595,7 +595,7 @@
         }
 
         images.forEach(function(img) {
-          if (img.complete && img.naturalWidth > 0) {
+          if (img.complete) {
             markLoaded();
           } else {
             img.addEventListener('load', markLoaded, { once: true });

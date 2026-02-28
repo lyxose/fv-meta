@@ -53,6 +53,8 @@ let screenViolationCount = 0;
 let experimentTerminated = false;
 let lastViolationTime = 0;
 const violationDebounceMs = 900;
+let pendingViolationWarningReason = '';
+let orientationMaskEl = null;
 
 // 姿态/陀螺仪检测
 let orientationListener = null;
@@ -148,6 +150,48 @@ async function requestFullscreenSafe() {
   return false;
 }
 
+async function lockPortraitSafe() {
+  try {
+    if (screen.orientation && typeof screen.orientation.lock === 'function') {
+      await screen.orientation.lock('portrait');
+      return true;
+    }
+  } catch (e) {
+    console.warn('⚠️ 竖屏锁定失败:', e && e.message ? e.message : e);
+  }
+  return false;
+}
+
+function ensureOrientationMask() {
+  if (orientationMaskEl) return orientationMaskEl;
+  const mask = document.createElement('div');
+  mask.id = 'orientationMask';
+  mask.style.cssText = `
+    position: fixed;
+    inset: 0;
+    z-index: 4000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    text-align: center;
+    padding: 24px;
+    font-size: 18px;
+    font-weight: 700;
+  `;
+  mask.innerHTML = '请保持手机竖屏，不允许横屏旋转。';
+  document.body.appendChild(mask);
+  orientationMaskEl = mask;
+  return mask;
+}
+
+function updateOrientationMask() {
+  const mask = ensureOrientationMask();
+  const isLandscape = window.innerWidth > window.innerHeight;
+  mask.style.display = isLandscape ? 'flex' : 'none';
+}
+
 function showViolationWarning(reasonText) {
   const warning = document.createElement('div');
   warning.style.cssText = `
@@ -227,8 +271,13 @@ async function handleScreenViolation(reason) {
   psychoJS.experiment.nextEntry();
 
   if (screenViolationCount === 1) {
-    showViolationWarning(reason);
+    if (document.visibilityState === 'visible') {
+      showViolationWarning(reason);
+    } else {
+      pendingViolationWarningReason = reason;
+    }
     await requestFullscreenSafe();
+    await lockPortraitSafe();
   } else {
     await terminateExperiment(`第2次违规：${reason}`);
   }
@@ -243,6 +292,8 @@ function setupScreenSecurity() {
     if (!isInFullscreen()) {
       await requestFullscreenSafe();
     }
+    await lockPortraitSafe();
+    updateOrientationMask();
   };
   document.addEventListener('pointerdown', firstGesture, { once: true, capture: true });
 
@@ -257,13 +308,27 @@ function setupScreenSecurity() {
     if (experimentTerminated) return;
     if (document.visibilityState !== 'visible') {
       handleScreenViolation('切出实验窗口');
+      return;
     }
+    if (pendingViolationWarningReason) {
+      showViolationWarning(pendingViolationWarningReason);
+      pendingViolationWarningReason = '';
+    }
+    updateOrientationMask();
   });
 
   window.addEventListener('blur', () => {
     if (experimentTerminated) return;
     handleScreenViolation('窗口失去焦点');
   });
+
+  window.addEventListener('orientationchange', () => {
+    updateOrientationMask();
+  });
+  window.addEventListener('resize', () => {
+    updateOrientationMask();
+  });
+  updateOrientationMask();
 }
 
 async function checkGyroscopeAvailability() {
@@ -441,6 +506,8 @@ async function handleConsentAccepted() {
   if (consentModal) consentModal.style.display = 'none';
 
   await requestFullscreenSafe();
+  await lockPortraitSafe();
+  updateOrientationMask();
 
   const mobile = isLikelyMobileDevice();
   hasGyroscope = mobile ? await checkGyroscopeAvailability() : false;
