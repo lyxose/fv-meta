@@ -75,7 +75,7 @@ def load_drawing_data(csv_file):
         return None
 
 def extract_drawing_matrix(df):
-    """从数据框中提取绘制矩阵"""
+    """从数据框中提取绘制矩阵（兼容 drawing_matrix 和 drawing_matrices）"""
     # 查找包含drawing_matrix的行
     drawing_rows = df[df['trial_type'] == 'drawing_data'] if 'trial_type' in df.columns else df
     
@@ -86,19 +86,54 @@ def extract_drawing_matrix(df):
     # 获取第一条绘制记录
     first_drawing = drawing_rows.iloc[0]
     
-    if 'drawing_matrix' not in first_drawing.index:
-        print("❌ 记录中没有drawing_matrix字段")
+    if 'drawing_matrices' not in first_drawing.index and 'drawing_matrix' not in first_drawing.index:
+        print("❌ 记录中没有drawing_matrices/drawing_matrix字段")
         print(f"  可用字段: {list(first_drawing.index)}")
         return None
     
     try:
-        matrix_json = first_drawing['drawing_matrix']
+        matrices_json = first_drawing.get('drawing_matrices', None)
+        if isinstance(matrices_json, str) and matrices_json.strip():
+            matrices = json.loads(matrices_json)
+            matrices_array = np.array(matrices, dtype=np.float32)
+            if matrices_array.ndim == 3:
+                print(f"✓ 多次绘制矩阵加载成功: 形状 {matrices_array.shape} (轮次, 高, 宽)")
+                return matrices_array
+
+        # 兼容旧格式
+        matrix_json = first_drawing.get('drawing_matrix', None)
+        if not isinstance(matrix_json, str) or not matrix_json.strip():
+            print("❌ drawing_matrices/drawing_matrix 字段为空")
+            return None
         matrix = json.loads(matrix_json)
         matrix_array = np.array(matrix, dtype=np.float32)
-        print(f"✓ 矩阵加载成功: 形状 {matrix_array.shape}")
-        return matrix_array
+        print(f"✓ 单次矩阵加载成功: 形状 {matrix_array.shape}")
+        return matrix_array[np.newaxis, ...]
     except json.JSONDecodeError as e:
         print(f"❌ JSON解析失败: {e}")
+        return None
+
+def extract_drawing_timeline(df):
+    """提取绘制时序数据 [drawing_index, elapsed_ms, x_norm, y_norm, mode]"""
+    drawing_rows = df[df['trial_type'] == 'drawing_data'] if 'trial_type' in df.columns else df
+    if len(drawing_rows) == 0:
+        return None
+
+    row = drawing_rows.iloc[0]
+    if 'drawing_timeline' not in row.index or not isinstance(row.get('drawing_timeline', None), str):
+        print("⚠️ 未找到 drawing_timeline 字段（可能是旧数据）")
+        return None
+
+    try:
+        timeline = json.loads(row['drawing_timeline'])
+        timeline_arr = np.array(timeline, dtype=np.float32)
+        if timeline_arr.ndim != 2 or timeline_arr.shape[1] < 5:
+            print(f"⚠️ drawing_timeline格式异常: shape={timeline_arr.shape}")
+            return None
+        print(f"✓ 绘制时序加载成功: {timeline_arr.shape[0]} 条事件")
+        return timeline_arr
+    except Exception as e:
+        print(f"❌ drawing_timeline 解析失败: {e}")
         return None
 
 def get_participant_info(df):
@@ -128,13 +163,19 @@ def visualize_drawing(matrix, participant_info=None, save_path='drawing_visualiz
     if matrix is None:
         print("❌ 矩阵为空，无法绘制")
         return False
+
+    # matrix: (trial, H, W)
+    if matrix.ndim == 3:
+        matrix_mean = np.mean(matrix, axis=0)
+    else:
+        matrix_mean = matrix
     
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
     
     # 左图：热力图（intensity）
     ax1 = axes[0]
-    im1 = ax1.imshow(matrix, cmap='hot', origin='upper', aspect='auto')
-    ax1.set_title('绘制强度分布\n(红色=高强度，黑色=无绘制)', fontsize=12, fontweight='bold')
+    im1 = ax1.imshow(matrix_mean, cmap='hot', origin='upper', aspect='auto')
+    ax1.set_title('平均绘制强度分布\n(红色=高强度，黑色=无绘制)', fontsize=12, fontweight='bold')
     ax1.set_xlabel('左 ← 水平位置 → 右')
     ax1.set_ylabel('顶 ↑ 垂直位置 ↓ 底')
     plt.colorbar(im1, ax=ax1, label='绘制强度 (0-255)')
@@ -144,7 +185,7 @@ def visualize_drawing(matrix, participant_info=None, save_path='drawing_visualiz
     
     # 右图：二值化图（是否有绘制）
     ax2 = axes[1]
-    binary_matrix = (matrix > 10).astype(np.uint8)  # 阈值：强度>10为有绘制
+    binary_matrix = (matrix_mean > 10).astype(np.uint8)  # 阈值：强度>10为有绘制
     im2 = ax2.imshow(binary_matrix, cmap='gray', origin='upper', aspect='auto')
     ax2.set_title('绘制覆盖区域\n(白色=被试绘制, 黑色=未绘制)', fontsize=12, fontweight='bold')
     ax2.set_xlabel('左 ← 水平位置 → 右')
@@ -177,6 +218,9 @@ def compute_statistics(matrix):
     """计算矩阵统计信息"""
     if matrix is None:
         return None
+
+    if matrix.ndim == 3:
+        matrix = np.mean(matrix, axis=0)
     
     stats = {
         '最大强度': np.max(matrix),
@@ -193,6 +237,9 @@ def analyze_spatial_distribution(matrix):
     """分析空间分布特征"""
     if matrix is None:
         return None
+
+    if matrix.ndim == 3:
+        matrix = np.mean(matrix, axis=0)
     
     # 计算水平和垂直的投影
     horizontal_projection = np.sum(matrix, axis=0)  # 沿行求和，得到每列的总强度
@@ -214,6 +261,9 @@ def plot_projections(matrix, save_path='projections.png'):
     """绘制水平和垂直投影"""
     if matrix is None:
         return False
+
+    if matrix.ndim == 3:
+        matrix = np.mean(matrix, axis=0)
     
     horizontal = np.sum(matrix, axis=0)
     vertical = np.sum(matrix, axis=1)
@@ -247,6 +297,80 @@ def plot_projections(matrix, save_path='projections.png'):
     plt.show()
     return True
 
+def analyze_timeline(timeline):
+    """分析绘制时序"""
+    if timeline is None or len(timeline) == 0:
+        return None
+
+    drawing_index = timeline[:, 0].astype(int)
+    t_ms = timeline[:, 1]
+    x = timeline[:, 2]
+    y = timeline[:, 3]
+    mode = timeline[:, 4].astype(int)  # 1=add, 0=subtract
+
+    add_count = int(np.sum(mode == 1))
+    sub_count = int(np.sum(mode == 0))
+    total = len(mode)
+    duration_ms = float(np.max(t_ms) - np.min(t_ms)) if total > 1 else 0.0
+
+    # 近似轨迹长度（归一化坐标空间）
+    dx = np.diff(x)
+    dy = np.diff(y)
+    path_len = float(np.sum(np.sqrt(dx * dx + dy * dy)))
+
+    result = {
+        '总事件数': total,
+        '绘制事件数(mode=1)': add_count,
+        '减淡事件数(mode=0)': sub_count,
+        '绘制占比': f"{(add_count / total * 100):.2f}%" if total else '0%',
+        '总时长(ms)': round(duration_ms, 2),
+        '轨迹总长度(归一化坐标)': round(path_len, 4),
+        '轮次数': int(np.max(drawing_index)) if total else 0
+    }
+    return result
+
+def plot_timeline_overview(timeline, save_path='timeline_overview.png'):
+    """可视化时序：时间-模式散点图 + 轨迹散点图"""
+    if timeline is None or len(timeline) == 0:
+        return False
+
+    drawing_index = timeline[:, 0].astype(int)
+    t_ms = timeline[:, 1]
+    x = timeline[:, 2]
+    y = timeline[:, 3]
+    mode = timeline[:, 4].astype(int)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    # 左：时间-模式
+    ax1 = axes[0]
+    colors = np.where(mode == 1, 'red', 'blue')
+    ax1.scatter(t_ms, drawing_index, c=colors, s=8, alpha=0.6)
+    ax1.set_title('时序事件分布\n(红=绘制, 蓝=减淡)', fontsize=11, fontweight='bold')
+    ax1.set_xlabel('时间 (ms)')
+    ax1.set_ylabel('绘制轮次')
+    ax1.grid(True, alpha=0.25)
+
+    # 右：空间轨迹
+    ax2 = axes[1]
+    ax2.scatter(x, y, c=t_ms, cmap='viridis', s=6, alpha=0.6)
+    ax2.set_title('绘制轨迹（归一化坐标）\n颜色表示时间推进', fontsize=11, fontweight='bold')
+    ax2.set_xlabel('x (0=左, 1=右)')
+    ax2.set_ylabel('y (0=上, 1=下)')
+    ax2.set_xlim(0, 1)
+    ax2.set_ylim(1, 0)
+    ax2.grid(True, alpha=0.25)
+
+    plt.tight_layout()
+    try:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"✓ 时序图已保存: {save_path}")
+    except Exception as e:
+        print(f"⚠️ 时序图保存失败: {e}")
+
+    plt.show()
+    return True
+
 def main():
     """主函数"""
     print("=" * 60)
@@ -276,29 +400,50 @@ def main():
     
     # 提取绘制矩阵
     print(f"\n🎨 提取绘制数据...")
-    matrix = extract_drawing_matrix(df)
-    if matrix is None:
+    matrices = extract_drawing_matrix(df)
+    if matrices is None:
         return
+
+    timeline = extract_drawing_timeline(df)
     
     # 计算统计
-    stats = compute_statistics(matrix)
+    stats = compute_statistics(matrices)
     print(f"\n📈 统计信息:")
     for key, value in stats.items():
         print(f"  {key}: {value}")
     
     # 空间分布
-    distribution = analyze_spatial_distribution(matrix)
+    distribution = analyze_spatial_distribution(matrices)
     print(f"\n📍 空间分布:")
     for key, value in distribution.items():
         print(f"  {key}: {value}")
+
+    if matrices.ndim == 3:
+        print(f"\n🧪 多次绘制信息:")
+        print(f"  绘制轮次数: {matrices.shape[0]}")
+        if matrices.shape[0] >= 2:
+            pairwise = []
+            for i in range(matrices.shape[0] - 1):
+                pairwise.append(float(np.mean(np.abs(matrices[i] - matrices[i + 1]))))
+            print(f"  相邻轮次平均差异: {[round(v, 4) for v in pairwise]}")
+
+    if timeline is not None:
+        timeline_stats = analyze_timeline(timeline)
+        print(f"\n⏱️ 绘制时序统计:")
+        for key, value in timeline_stats.items():
+            print(f"  {key}: {value}")
     
     # 生成可视化
     print(f"\n🖼️  生成可视化图像...")
     viz_path = f"visualization_{participant_info['participant_id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-    visualize_drawing(matrix, participant_info, viz_path)
+    visualize_drawing(matrices, participant_info, viz_path)
     
     proj_path = f"projections_{participant_info['participant_id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-    plot_projections(matrix, proj_path)
+    plot_projections(matrices, proj_path)
+
+    if timeline is not None:
+        tl_path = f"timeline_{participant_info['participant_id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        plot_timeline_overview(timeline, tl_path)
     
     print("\n✅ 分析完成！")
     print("=" * 60)

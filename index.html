@@ -252,6 +252,62 @@
       .start-btn:hover {
         background-color: #218838;
       }
+
+      /* 姿态校准页 */
+      #orientationCheckPage {
+        display: none;
+        width: 100vw;
+        height: 100vh;
+        background-color: #f0f0f0;
+        position: fixed;
+        top: 0;
+        left: 0;
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+      }
+
+      .orientation-content {
+        background: white;
+        padding: 36px;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        max-width: 640px;
+        width: 92%;
+        text-align: left;
+      }
+
+      .orientation-status {
+        margin-top: 16px;
+        padding: 12px;
+        border-radius: 6px;
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        color: #495057;
+      }
+
+      .orientation-values {
+        margin-top: 10px;
+        font-size: 13px;
+        color: #6c757d;
+      }
+
+      .orientation-btn {
+        margin-top: 18px;
+        width: 100%;
+        padding: 14px;
+        font-size: 17px;
+        border: none;
+        border-radius: 6px;
+        color: white;
+        background: #007bff;
+        cursor: pointer;
+      }
+
+      .orientation-btn:disabled {
+        cursor: not-allowed;
+        background: #9dbfe6;
+      }
       
       /* 实验完成页 */
       #completionPage {
@@ -328,6 +384,24 @@
           </div>
           <div id="consentLoadText" style="font-size:12px;color:#888;margin-top:6px;text-align:right;">0%</div>
         </div>
+      </div>
+    </div>
+
+    <!-- 姿态校准页（有陀螺仪时显示） -->
+    <div id="orientationCheckPage">
+      <div class="orientation-content">
+        <h2 style="text-align:center;margin:0 0 14px 0;color:#333;">开始前姿态校准</h2>
+        <p style="color:#555;line-height:1.8;">
+          检测到您的设备支持姿态传感器。请按以下方式持握手机：
+        </p>
+        <ul style="color:#555;line-height:1.8;">
+          <li>手机<strong>竖直</strong>（屏幕与地面大致垂直）</li>
+          <li>手机底边与桌面边缘大致<strong>平行</strong></li>
+          <li>请保持该姿态约 1.5 秒</li>
+        </ul>
+        <div id="orientationStatus" class="orientation-status">正在初始化传感器检测…</div>
+        <div id="orientationValues" class="orientation-values">β: --°, γ: --°</div>
+        <button id="orientationContinueBtn" class="orientation-btn" disabled>姿态已就绪，开始实验</button>
       </div>
     </div>
 
@@ -491,8 +565,12 @@
 
         agreeBtn.onclick = function() {
           if (agreeBtn.disabled) return;
-          consentModal.style.display = 'none';
-          rootDiv.style.display = '';
+          if (typeof window.onConsentAccepted === 'function') {
+            window.onConsentAccepted();
+          } else {
+            consentModal.style.display = 'none';
+            rootDiv.style.display = '';
+          }
         };
 
         var images = Array.from(document.images || []).filter(function(img) {

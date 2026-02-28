@@ -48,6 +48,25 @@ let allDrawingMatrices = []; // 存储三次的绘制矩阵
 let currentNotification = null; // 存储当前显示的提示框
 let enableBrushSizeAdjust = false; // 开关：是否允许调整画笔大小
 
+// 全屏与窗口监控
+let screenViolationCount = 0;
+let experimentTerminated = false;
+let lastViolationTime = 0;
+const violationDebounceMs = 900;
+
+// 姿态/陀螺仪检测
+let orientationListener = null;
+let orientationStableStart = null;
+let orientationReady = false;
+let orientationPermissionState = 'unknown';
+let hasGyroscope = false;
+let orientationSamples = [];
+
+// 绘制时序记录
+let drawingTimeline = [];
+let drawingTaskStartTime = null;
+let firstDrawingActivityTime = 0;
+
 // 绘制时长检验参数和变量
 const minDrawingTime = 6000; // 首次绘制最少需要的操作时长（毫秒）
 let totalDrawingActivityTime = 0; // 累计绘制活动时长（毫秒）
@@ -75,6 +94,8 @@ document.addEventListener('DOMContentLoaded', function() {
   console.log('📄 页面加载完成');
   
   experimentData.startTime = new Date().toISOString();
+  setupScreenSecurity();
+  window.onConsentAccepted = handleConsentAccepted;
   
   // 添加输入框回车事件
   const inputs = document.querySelectorAll('input[type="text"]');
@@ -91,6 +112,356 @@ document.addEventListener('DOMContentLoaded', function() {
     initDrawingInterface();
   }, 100);
 });
+
+function isLikelyMobileDevice() {
+  const ua = navigator.userAgent || '';
+  return /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua);
+}
+
+function getFullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || null;
+}
+
+function isInFullscreen() {
+  return !!getFullscreenElement();
+}
+
+async function requestFullscreenSafe() {
+  const el = document.documentElement;
+  if (!el) return false;
+  try {
+    if (el.requestFullscreen) {
+      await el.requestFullscreen();
+      return true;
+    }
+    if (el.webkitRequestFullscreen) {
+      el.webkitRequestFullscreen();
+      return true;
+    }
+    if (el.msRequestFullscreen) {
+      el.msRequestFullscreen();
+      return true;
+    }
+  } catch (e) {
+    console.warn('⚠️ 全屏请求失败:', e && e.message ? e.message : e);
+  }
+  return false;
+}
+
+function showViolationWarning(reasonText) {
+  const warning = document.createElement('div');
+  warning.style.cssText = `
+    position: fixed;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 193, 7, 0.98);
+    color: #212529;
+    padding: 14px 20px;
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: bold;
+    z-index: 3000;
+    max-width: 90%;
+    text-align: center;
+    box-shadow: 0 2px 15px rgba(0,0,0,0.25);
+  `;
+  warning.innerHTML = `⚠️ 请保持实验页面在前台并处于全屏（原因：${reasonText}）。再次发生将终止实验。`;
+  document.body.appendChild(warning);
+  setTimeout(() => {
+    if (warning.parentNode) warning.remove();
+  }, 2800);
+}
+
+async function terminateExperiment(reason) {
+  if (experimentTerminated) return;
+  experimentTerminated = true;
+  experimentSubmitted = true;
+  console.error('🛑 实验已终止:', reason);
+
+  try {
+    psychoJS.experiment.addData('termination_reason', reason);
+    psychoJS.experiment.addData('termination_time', util.MonotonicClock.getDateStr());
+    psychoJS.experiment.addData('trial_type', 'terminated');
+    psychoJS.experiment.nextEntry();
+    await psychoJS.experiment.save();
+  } catch (e) {
+    console.error('⚠️ 终止前保存失败:', e);
+  }
+
+  const interfaces = ['consentModal', 'root', 'instructionPage', 'comprehensionCheckPage', 'drawingInterface', 'orientationCheckPage'];
+  interfaces.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+
+  const completionPage = document.getElementById('completionPage');
+  if (completionPage) {
+    completionPage.style.display = 'flex';
+    const content = completionPage.querySelector('.completion-content');
+    if (content) {
+      content.innerHTML = `
+        <h2 style="color:#dc3545;">实验已终止</h2>
+        <p>检测到页面离开全屏或切出前台超过允许次数。</p>
+        <p style="font-size:14px;color:#666;">终止原因：${reason}</p>
+      `;
+    }
+  }
+
+  setTimeout(() => {
+    psychoJS.quit({message: 'Experiment terminated.', isCompleted: false});
+  }, 1200);
+}
+
+async function handleScreenViolation(reason) {
+  if (experimentTerminated) return;
+  const now = Date.now();
+  if (now - lastViolationTime < violationDebounceMs) return;
+  lastViolationTime = now;
+
+  screenViolationCount += 1;
+  psychoJS.experiment.addData('screen_violation_count', screenViolationCount);
+  psychoJS.experiment.addData('screen_violation_reason', reason);
+  psychoJS.experiment.addData('screen_violation_time', util.MonotonicClock.getDateStr());
+  psychoJS.experiment.addData('trial_type', 'screen_violation');
+  psychoJS.experiment.nextEntry();
+
+  if (screenViolationCount === 1) {
+    showViolationWarning(reason);
+    await requestFullscreenSafe();
+  } else {
+    await terminateExperiment(`第2次违规：${reason}`);
+  }
+}
+
+function setupScreenSecurity() {
+  // 尝试自动全屏（多数浏览器会因非手势触发而拒绝）
+  requestFullscreenSafe();
+
+  // 首次用户交互时再次尝试全屏
+  const firstGesture = async () => {
+    if (!isInFullscreen()) {
+      await requestFullscreenSafe();
+    }
+  };
+  document.addEventListener('pointerdown', firstGesture, { once: true, capture: true });
+
+  document.addEventListener('fullscreenchange', () => {
+    if (experimentTerminated) return;
+    if (!isInFullscreen()) {
+      handleScreenViolation('退出全屏');
+    }
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (experimentTerminated) return;
+    if (document.visibilityState !== 'visible') {
+      handleScreenViolation('切出实验窗口');
+    }
+  });
+
+  window.addEventListener('blur', () => {
+    if (experimentTerminated) return;
+    handleScreenViolation('窗口失去焦点');
+  });
+}
+
+async function checkGyroscopeAvailability() {
+  let genericGyroDetected = false;
+
+  // Generic Sensor API
+  if ('Gyroscope' in window) {
+    try {
+      let found = false;
+      await new Promise((resolve) => {
+        const gyro = new window.Gyroscope({ frequency: 10 });
+        const timer = setTimeout(() => {
+          try { gyro.stop(); } catch (e) {}
+          resolve();
+        }, 1300);
+        gyro.onreading = () => {
+          found = true;
+          clearTimeout(timer);
+          try { gyro.stop(); } catch (e) {}
+          resolve();
+        };
+        gyro.onerror = () => {
+          clearTimeout(timer);
+          try { gyro.stop(); } catch (e) {}
+          resolve();
+        };
+        gyro.start();
+      });
+      if (found) genericGyroDetected = true;
+    } catch (e) {
+      console.warn('Generic Gyroscope API 不可用:', e && e.message ? e.message : e);
+    }
+  }
+
+  // iOS 需要显式授权
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    orientationPermissionState = 'required';
+    try {
+      const permission = await DeviceOrientationEvent.requestPermission();
+      orientationPermissionState = permission;
+      if (permission !== 'granted') return false;
+    } catch (e) {
+      orientationPermissionState = 'denied';
+      return false;
+    }
+  }
+
+  // DeviceOrientation 事件探测
+  if (typeof window.DeviceOrientationEvent === 'undefined') {
+    if (genericGyroDetected) {
+      console.warn('检测到陀螺仪，但缺少 DeviceOrientation 接口，无法执行姿态校准。');
+    }
+    return false;
+  }
+
+  return await new Promise((resolve) => {
+    let detected = false;
+    const timer = setTimeout(() => {
+      window.removeEventListener('deviceorientation', onOrientation, true);
+      resolve(detected);
+    }, 1500);
+
+    function onOrientation(event) {
+      const hasValues = Number.isFinite(event.beta) || Number.isFinite(event.gamma) || Number.isFinite(event.alpha);
+      if (hasValues) {
+        detected = true;
+        clearTimeout(timer);
+        window.removeEventListener('deviceorientation', onOrientation, true);
+        resolve(true);
+      }
+    }
+
+    window.addEventListener('deviceorientation', onOrientation, true);
+  });
+}
+
+function showRootEntryPage() {
+  const root = document.getElementById('root');
+  const orientationCheckPage = document.getElementById('orientationCheckPage');
+  const consentModal = document.getElementById('consentModal');
+  if (consentModal) consentModal.style.display = 'none';
+  if (orientationCheckPage) orientationCheckPage.style.display = 'none';
+  if (root) root.style.display = '';
+}
+
+function stopOrientationMonitor() {
+  if (orientationListener) {
+    window.removeEventListener('deviceorientation', orientationListener, true);
+    orientationListener = null;
+  }
+}
+
+function startOrientationMonitor() {
+  const statusEl = document.getElementById('orientationStatus');
+  const valuesEl = document.getElementById('orientationValues');
+  const continueBtn = document.getElementById('orientationContinueBtn');
+  orientationStableStart = null;
+  orientationReady = false;
+  if (continueBtn) continueBtn.disabled = true;
+
+  orientationListener = function(event) {
+    const beta = Number.isFinite(event.beta) ? event.beta : null;
+    const gamma = Number.isFinite(event.gamma) ? event.gamma : null;
+    const now = performance.now();
+
+    if (beta !== null && gamma !== null) {
+      orientationSamples.push({
+        t: Math.round(now),
+        beta: Number(beta.toFixed(2)),
+        gamma: Number(gamma.toFixed(2))
+      });
+    }
+
+    if (valuesEl) {
+      const betaText = beta === null ? '--' : beta.toFixed(1);
+      const gammaText = gamma === null ? '--' : gamma.toFixed(1);
+      valuesEl.textContent = `β: ${betaText}°, γ: ${gammaText}°`;
+    }
+
+    const portrait = window.innerHeight >= window.innerWidth;
+    const vertical = beta !== null && Math.abs(Math.abs(beta) - 90) <= 25;
+    const bottomParallel = gamma !== null && Math.abs(gamma) <= 20;
+
+    if (portrait && vertical && bottomParallel) {
+      if (!orientationStableStart) orientationStableStart = now;
+      const stableMs = now - orientationStableStart;
+      if (statusEl) {
+        if (stableMs < 1500) {
+          statusEl.textContent = `姿态正确，请继续保持 ${(1.5 - stableMs / 1000).toFixed(1)} 秒…`;
+        } else {
+          statusEl.textContent = '姿态校准完成，可以开始实验。';
+        }
+      }
+      if (stableMs >= 1500 && !orientationReady) {
+        orientationReady = true;
+        if (continueBtn) continueBtn.disabled = false;
+      }
+    } else {
+      orientationStableStart = null;
+      orientationReady = false;
+      if (continueBtn) continueBtn.disabled = true;
+      if (statusEl) {
+        statusEl.textContent = '请将手机竖直，并让底边与桌面边缘大致平行。';
+      }
+    }
+  };
+
+  window.addEventListener('deviceorientation', orientationListener, true);
+}
+
+function showOrientationCheckPage() {
+  const orientationPage = document.getElementById('orientationCheckPage');
+  const root = document.getElementById('root');
+  if (root) root.style.display = 'none';
+  if (orientationPage) orientationPage.style.display = 'flex';
+
+  const continueBtn = document.getElementById('orientationContinueBtn');
+  if (continueBtn) {
+    continueBtn.onclick = () => {
+      stopOrientationMonitor();
+      psychoJS.experiment.addData('orientation_calibration_passed', 1);
+      psychoJS.experiment.addData('orientation_permission_state', orientationPermissionState);
+      psychoJS.experiment.addData('orientation_samples', JSON.stringify(orientationSamples.slice(-300)));
+      psychoJS.experiment.addData('trial_type', 'orientation_check');
+      psychoJS.experiment.nextEntry();
+      showRootEntryPage();
+    };
+  }
+
+  startOrientationMonitor();
+}
+
+async function handleConsentAccepted() {
+  const consentModal = document.getElementById('consentModal');
+  if (consentModal) consentModal.style.display = 'none';
+
+  await requestFullscreenSafe();
+
+  const mobile = isLikelyMobileDevice();
+  hasGyroscope = mobile ? await checkGyroscopeAvailability() : false;
+
+  if (mobile && orientationPermissionState === 'denied') {
+    await terminateExperiment('姿态传感器权限被拒绝，无法进行姿态校准');
+    return;
+  }
+
+  psychoJS.experiment.addData('device_is_mobile', mobile ? 1 : 0);
+  psychoJS.experiment.addData('device_has_gyroscope', hasGyroscope ? 1 : 0);
+  psychoJS.experiment.addData('orientation_permission_state', orientationPermissionState);
+  psychoJS.experiment.addData('trial_type', 'device_check');
+  psychoJS.experiment.nextEntry();
+
+  if (hasGyroscope) {
+    showOrientationCheckPage();
+  } else {
+    showRootEntryPage();
+  }
+}
 
 // 提交被试信息
 function submitInfo() {
@@ -315,6 +686,9 @@ function startDrawingTask() {
   experimentSubmitted = false;
   drawingCount = 1;
   allDrawingMatrices = [];
+  drawingTimeline = [];
+  drawingTaskStartTime = performance.now();
+  firstDrawingActivityTime = 0;
   
   // 重置绘制时长计时器（仅首次绘制需要）
   totalDrawingActivityTime = 0;
@@ -395,6 +769,8 @@ function drawCanvas() {
 }
 
 function applyGaussianBrush(x, y, mode) {
+  recordDrawingTimelineEvent(x, y, mode);
+
   const centerX = canvas.width / 2;
   const centerY = canvas.height / 2;
   const radius = canvas.width / 2 - 10;
@@ -447,6 +823,25 @@ function applyGaussianBrush(x, y, mode) {
   }
   
   drawCanvas();
+}
+
+function recordDrawingTimelineEvent(x, y, mode) {
+  if (!canvas || drawingTaskStartTime === null) return;
+
+  const clampedX = Math.max(0, Math.min(canvas.width, x));
+  const clampedY = Math.max(0, Math.min(canvas.height, y));
+  const normalizedX = Number((clampedX / canvas.width).toFixed(4));
+  const normalizedY = Number((clampedY / canvas.height).toFixed(4));
+  const elapsedMs = Math.round(performance.now() - drawingTaskStartTime);
+
+  // [绘制轮次, 时间(ms), x(0-1), y(0-1), 模式(1=绘制,0=减淡)]
+  drawingTimeline.push([
+    drawingCount,
+    elapsedMs,
+    normalizedX,
+    normalizedY,
+    mode === 'add' ? 1 : 0
+  ]);
 }
 
 // 鼠标事件 - 双击切换模式
@@ -638,6 +1033,7 @@ async function confirmDrawing() {
       console.log(`⏱️ 绘制时长不足：${totalDrawingActivityTime}ms，需要 ${minDrawingTime}ms`);
       return;
     }
+    firstDrawingActivityTime = totalDrawingActivityTime;
     console.log(`✓ 绘制时长足够：${totalDrawingActivityTime}ms`);
   }
   
@@ -690,10 +1086,13 @@ async function confirmDrawing() {
     try {
       const matrixJSON = JSON.stringify(allDrawingMatrices);
       psychoJS.experiment.addData('drawing_matrices', matrixJSON);
+      psychoJS.experiment.addData('drawing_timeline', JSON.stringify(drawingTimeline));
+      psychoJS.experiment.addData('drawing_timeline_format', '[drawing_index,elapsed_ms,x_norm,y_norm,mode_1_add_0_subtract]');
+      psychoJS.experiment.addData('drawing_timeline_event_count', drawingTimeline.length);
       psychoJS.experiment.addData('matrix_size', matrixSize);
       psychoJS.experiment.addData('drawing_count', 3);
       psychoJS.experiment.addData('drawings_variability', variability);
-      psychoJS.experiment.addData('first_drawing_duration', totalDrawingActivityTime);
+      psychoJS.experiment.addData('first_drawing_duration', firstDrawingActivityTime || totalDrawingActivityTime);
       psychoJS.experiment.addData('trial_type', 'drawing_data');
       psychoJS.experiment.addData('drawing_time', util.MonotonicClock.getDateStr());
       psychoJS.experiment.nextEntry();
