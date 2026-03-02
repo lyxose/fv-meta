@@ -541,18 +541,40 @@ async function uploadCloudDataDirect(payloadObj) {
     }
   };
 
-  const resp = await fetch('/data/collect', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    keepalive: true
-  });
+  const bodyText = JSON.stringify(body);
+  const bodyBytes = new TextEncoder().encode(bodyText).length;
+  const useKeepalive = bodyBytes <= 60 * 1024;
+  const absoluteCollectBase = (window.__EXP_ACCESS_BASE__ || 'https://exp.vaonline.dpdns.org').replace(/\/$/, '');
+  const candidates = Array.from(new Set([
+    `${window.location.origin}/data/collect`,
+    `${absoluteCollectBase}/data/collect`
+  ]));
 
-  if (!resp.ok) {
-    throw new Error(`Cloud collect failed: ${resp.status}`);
+  let lastError = null;
+  for (const url of candidates) {
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: bodyText,
+        keepalive: useKeepalive
+      });
+      if (!resp.ok) {
+        throw new Error(`Cloud collect failed: ${resp.status}`);
+      }
+      const data = await resp.json().catch(() => ({}));
+      return { skipped: false, key: data?.key || '' };
+    } catch (err) {
+      lastError = err;
+      continue;
+    }
   }
-  const data = await resp.json().catch(() => ({}));
-  return { skipped: false, key: data?.key || '' };
+
+  if (lastError) {
+    const reason = String(lastError?.message || lastError || 'unknown error');
+    throw new Error(`Cloud collect request failed (${reason}); payload_bytes=${bodyBytes}`);
+  }
+  throw new Error('Cloud collect request failed: unknown error');
 }
 
 async function checkGyroscopeAvailability() {
