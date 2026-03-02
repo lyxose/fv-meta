@@ -511,6 +511,50 @@ async function finalizeExperimentAndQuit() {
   }, 250);
 }
 
+function getCloudCaptureContext() {
+  const path = String(window.location.pathname || '');
+  const parts = path.split('/').filter(Boolean);
+  const isCloudCapturePath = parts[0] === 'exp' && !!parts[1];
+  const prefix = isCloudCapturePath ? decodeURIComponent(parts[1]) : '';
+  const token = new URLSearchParams(window.location.search).get('access_token') || '';
+  return {
+    isCloudCapturePath,
+    prefix,
+    token
+  };
+}
+
+async function uploadCloudDataDirect(payloadObj) {
+  const ctx = getCloudCaptureContext();
+  if (!ctx.isCloudCapturePath || !ctx.prefix) {
+    return { skipped: true, reason: 'not_cloud_capture_path' };
+  }
+
+  const body = {
+    prefix: ctx.prefix,
+    access_token: ctx.token,
+    download_policy: 'upload_only',
+    payload: {
+      type: 'direct_save_audit',
+      data: payloadObj,
+      saved_at: new Date().toISOString()
+    }
+  };
+
+  const resp = await fetch('/data/collect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    keepalive: true
+  });
+
+  if (!resp.ok) {
+    throw new Error(`Cloud collect failed: ${resp.status}`);
+  }
+  const data = await resp.json().catch(() => ({}));
+  return { skipped: false, key: data?.key || '' };
+}
+
 async function checkGyroscopeAvailability() {
   let genericGyroDetected = false;
 
@@ -1419,6 +1463,28 @@ async function submitDescriptionAndSave() {
 
     await psychoJS.experiment.save();
     console.log('✓ 数据已成功保存到 Pavlovia 服务器');
+
+    const directPayload = {
+      participant_id: expInfo.participant || experimentData?.participantInfo?.id || '',
+      exp_name: expName,
+      drawing_matrices: allDrawingMatrices,
+      drawing_timeline: drawingTimeline,
+      matrix_size: matrixSize,
+      drawing_count: 2,
+      drawings_variability: variability,
+      first_drawing_duration: firstDrawingActivityTime || totalDrawingActivityTime,
+      gaze_distribution_description: gazeDistributionDescription,
+      gaze_description_length: gazeDistributionDescription.length,
+      drawing_time: util.MonotonicClock.getDateStr()
+    };
+
+    const cloudSaveResult = await uploadCloudDataDirect(directPayload);
+    if (!cloudSaveResult.skipped && !cloudSaveResult.key) {
+      throw new Error('云端审核未返回有效存储键，已阻止完成页面。');
+    }
+    if (!cloudSaveResult.skipped) {
+      console.log('☁️ Cloud R2 审核通过，存储键:', cloudSaveResult.key);
+    }
 
     updateSavingPageSuccess();
 
