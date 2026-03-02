@@ -22,7 +22,8 @@ let experimentData = {
   participantInfo: {},
   drawingData: null,
   expUid: '',
-  sourcePlatform: 'pavlovia'
+  sourcePlatform: 'pavlovia',
+  downloadPolicy: 'upload_only'
 };
 
 // init psychoJS:
@@ -160,6 +161,10 @@ async function hydrateParticipantIdentity() {
       expInfo.participant = uid;
     }
     if (expUid) experimentData.expUid = expUid;
+    const policy = String(tokenData?.access_config?.download_policy || '').trim();
+    if (policy) {
+      experimentData.downloadPolicy = policy;
+    }
     if (ctx.isCloudCapturePath) {
       experimentData.sourcePlatform = 'mycloud';
     }
@@ -656,7 +661,9 @@ function buildMetadataPayload(variability) {
 }
 
 function buildArtifactFiles(variability) {
-  const stamp = Date.now();
+  const idPart = String(experimentData?.participantInfo?.id || expInfo.participant || 'participant').replace(/[^A-Za-z0-9_-]/g, '_');
+  const expPart = String(experimentData?.expUid || expName || 'exp').replace(/[^A-Za-z0-9_-]/g, '_');
+  const base = `${expPart}_${idPart}`;
   const matrix1 = Array.isArray(allDrawingMatrices?.[0]) ? allDrawingMatrices[0] : [];
   const matrix2 = Array.isArray(allDrawingMatrices?.[1]) ? allDrawingMatrices[1] : [];
   const { byOne, byTwo } = splitTimelineByDrawing(drawingTimeline || []);
@@ -664,31 +671,63 @@ function buildArtifactFiles(variability) {
 
   return [
     {
-      file_name: `${stamp}_metadata.json`,
+      file_name: `${base}_metadata.json`,
       content_type: 'application/json; charset=utf-8',
       content: JSON.stringify(metadata, null, 2),
     },
     {
-      file_name: `${stamp}_drawing1_timeline.csv`,
+      file_name: `${base}_drawing1_timeline.csv`,
       content_type: 'text/csv; charset=utf-8',
       content: timelineToCsv(byOne),
     },
     {
-      file_name: `${stamp}_drawing2_timeline.csv`,
+      file_name: `${base}_drawing2_timeline.csv`,
       content_type: 'text/csv; charset=utf-8',
       content: timelineToCsv(byTwo),
     },
     {
-      file_name: `${stamp}_drawing1_matrix.csv`,
+      file_name: `${base}_drawing1_matrix.csv`,
       content_type: 'text/csv; charset=utf-8',
       content: matrixToCsv(matrix1),
     },
     {
-      file_name: `${stamp}_drawing2_matrix.csv`,
+      file_name: `${base}_drawing2_matrix.csv`,
       content_type: 'text/csv; charset=utf-8',
       content: matrixToCsv(matrix2),
     },
   ];
+}
+
+function shouldDownloadArtifactsLocally() {
+  const policy = String(experimentData.downloadPolicy || '').trim().toLowerCase();
+  return policy === 'download_and_upload' || policy === 'download_only';
+}
+
+function downloadArtifactsLocally(artifacts) {
+  (Array.isArray(artifacts) ? artifacts : []).forEach((artifact) => {
+    const fileName = String(artifact?.file_name || '').trim();
+    const content = typeof artifact?.content === 'string' ? artifact.content : '';
+    if (!fileName || !content) return;
+    const type = String(artifact?.content_type || 'text/plain; charset=utf-8');
+    try {
+      if (typeof util?.offerDataForDownload === 'function') {
+        util.offerDataForDownload(fileName, content, type);
+        return;
+      }
+    } catch (error) {
+      console.warn('offerDataForDownload 失败，回退浏览器下载:', error && error.message ? error.message : error);
+    }
+
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
 }
 
 async function uploadCloudDataDirect(payloadObj) {
@@ -1641,8 +1680,19 @@ async function submitDescriptionAndSave() {
     psychoJS.experiment.addData('drawing_time', util.MonotonicClock.getDateStr());
     psychoJS.experiment.nextEntry();
 
-    await psychoJS.experiment.save();
-    console.log('✓ 数据已成功保存到 Pavlovia 服务器');
+    const shouldCallPsychoSave = experimentData.sourcePlatform !== 'mycloud';
+    if (shouldCallPsychoSave) {
+      await psychoJS.experiment.save();
+      console.log('✓ 数据已成功保存到 Pavlovia 服务器');
+    } else {
+      console.log('✓ MyCloud 模式：跳过默认 PsychoJS CSV 下载流程');
+    }
+
+    const artifactFiles = buildArtifactFiles(variability);
+    if (shouldDownloadArtifactsLocally()) {
+      downloadArtifactsLocally(artifactFiles);
+      console.log('✓ 已触发本地分文件下载');
+    }
 
     experimentData.endTime = new Date().toISOString();
     const directPayload = {
@@ -1651,7 +1701,7 @@ async function submitDescriptionAndSave() {
       user_uid: experimentData?.participantInfo?.id || expInfo.participant || '',
       experiment_uid: experimentData?.expUid || '',
       exp_name: expName,
-      artifacts: buildArtifactFiles(variability),
+      artifacts: artifactFiles,
       drawing_time: util.MonotonicClock.getDateStr(),
     };
 
