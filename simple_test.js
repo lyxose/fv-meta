@@ -27,12 +27,16 @@ let experimentData = {
 const psychoJS = new PsychoJS({
   debug: true
 });
+// 暴露到全局，供访问层注入脚本捕获 save() 并回传数据到 R2
+window.psychoJS = psychoJS;
+window.psychojs = psychoJS;
 
 // 绘制相关变量
 let canvas, ctx;
 let isDrawing = false;
 let drawMode = 'add'; // 'add' or 'subtract'
 let brushSize = 15;
+const brushDiameterRatio = 0.10; // 画笔直径 = 白色圆盘直径 * 1/10
 let colorMatrix = null;
 let canvasSize = 0;
 let matrixSize = 256;
@@ -43,8 +47,8 @@ let experimentSubmitted = false;
 let lastClickTime = 0;
 let clickTimeout = null;
 // 多次绘制相关变量
-let drawingCount = 1; // 1, 2, 3
-let allDrawingMatrices = []; // 存储三次的绘制矩阵
+let drawingCount = 1; // 1, 2
+let allDrawingMatrices = []; // 存储两次的绘制矩阵
 let currentNotification = null; // 存储当前显示的提示框
 let enableBrushSizeAdjust = false; // 开关：是否允许调整画笔大小
 let gazeDistributionDescription = ''; // 被试对注视分布的文字描述
@@ -61,6 +65,11 @@ let experimentPausedForRecovery = false;
 let pauseOverlayEl = null;
 let orientationOutOfRange = false;
 let orientationGuardListener = null;
+let screenSecurityArmed = false; // 仅在同意后启用违规计数
+let fullscreenEntryConfirmed = false; // 仅在确认已进入全屏后才统计退出
+let screenSecurityArmAt = 0;
+let fullscreenConfirmedAt = 0;
+const fullscreenGuardGraceMs = 1200;
 
 // 姿态/陀螺仪检测
 let orientationListener = null;
@@ -396,6 +405,9 @@ async function terminateExperiment(reason) {
 
 async function handleScreenViolation(reason) {
   if (experimentTerminated || experimentCompleted) return;
+  if (!screenSecurityArmed) return;
+  if (!fullscreenEntryConfirmed) return;
+  if ((Date.now() - fullscreenConfirmedAt) < fullscreenGuardGraceMs) return;
   const now = Date.now();
   if (now - lastViolationTime < violationDebounceMs) return;
   lastViolationTime = now;
@@ -432,16 +444,25 @@ function setupScreenSecurity() {
 
   document.addEventListener('fullscreenchange', async () => {
     if (experimentTerminated || experimentCompleted) return;
-    if (!isInFullscreen()) {
-      handleScreenViolation('退出全屏');
+    if (isInFullscreen()) {
+      if (screenSecurityArmed && !fullscreenEntryConfirmed) {
+        fullscreenEntryConfirmed = true;
+        fullscreenConfirmedAt = Date.now();
+      }
+      await ensurePortraitFullscreen();
+      updateOrientationMask();
       return;
     }
-    await ensurePortraitFullscreen();
-    updateOrientationMask();
+
+    if (!screenSecurityArmed || !fullscreenEntryConfirmed) return;
+    if ((Date.now() - screenSecurityArmAt) < fullscreenGuardGraceMs) return;
+    handleScreenViolation('退出全屏');
   });
 
   document.addEventListener('visibilitychange', () => {
     if (experimentTerminated || experimentCompleted) return;
+    if (!screenSecurityArmed || !fullscreenEntryConfirmed) return;
+    if ((Date.now() - fullscreenConfirmedAt) < fullscreenGuardGraceMs) return;
     if (document.visibilityState !== 'visible') {
       handleScreenViolation('切出实验窗口');
       return;
@@ -460,6 +481,8 @@ function setupScreenSecurity() {
 
   window.addEventListener('blur', () => {
     if (experimentTerminated || experimentCompleted) return;
+    if (!screenSecurityArmed || !fullscreenEntryConfirmed) return;
+    if ((Date.now() - fullscreenConfirmedAt) < fullscreenGuardGraceMs) return;
     handleScreenViolation('窗口失去焦点');
   });
 
@@ -662,6 +685,12 @@ async function handleConsentAccepted() {
   if (consentModal) consentModal.style.display = 'none';
 
   await ensurePortraitFullscreen();
+  screenSecurityArmed = true;
+  screenSecurityArmAt = Date.now();
+  if (isInFullscreen()) {
+    fullscreenEntryConfirmed = true;
+    fullscreenConfirmedAt = Date.now();
+  }
 
   const mobile = isLikelyMobileDevice();
   hasGyroscope = mobile ? await checkGyroscopeAvailability() : false;
@@ -884,6 +913,9 @@ function resizeCanvas() {
   canvasSize = size;
   canvas.width = size;
   canvas.height = size;
+
+  const whiteDiskDiameter = Math.max(20, canvas.width - 20);
+  brushSize = Math.max(4, whiteDiskDiameter * brushDiameterRatio * 0.5);
   
   if (colorMatrix) drawCanvas();
 }
@@ -1289,7 +1321,7 @@ async function confirmDrawing() {
   const matrixCopy = colorMatrix.map(row => [...row]);
   allDrawingMatrices.push(matrixCopy);
   
-  if (drawingCount < 3) {
+  if (drawingCount < 2) {
     // 立即清空画布，防止被试记忆
     initColorMatrix();
     drawCanvas();
@@ -1321,7 +1353,7 @@ async function confirmDrawing() {
     // 所有绘制任务完成，进入文字描述页面
     experimentSubmitted = true;
     showDescriptionPage();
-    console.log('📝 三次绘制完成，等待被试填写分布描述');
+    console.log('📝 两次绘制完成，等待被试填写分布描述');
   }
 }
 
@@ -1376,7 +1408,7 @@ async function submitDescriptionAndSave() {
     psychoJS.experiment.addData('drawing_timeline_format', '[drawing_index,elapsed_ms,x_norm,y_norm,mode_1_add_0_subtract]');
     psychoJS.experiment.addData('drawing_timeline_event_count', drawingTimeline.length);
     psychoJS.experiment.addData('matrix_size', matrixSize);
-    psychoJS.experiment.addData('drawing_count', 3);
+    psychoJS.experiment.addData('drawing_count', 2);
     psychoJS.experiment.addData('drawings_variability', variability);
     psychoJS.experiment.addData('first_drawing_duration', firstDrawingActivityTime || totalDrawingActivityTime);
     psychoJS.experiment.addData('gaze_distribution_description', gazeDistributionDescription);
@@ -1461,7 +1493,7 @@ function showDrawingIntervalPage() {
   console.log(`⏳ 显示第${drawingCount}次绘制准备页`);
 }
 
-// 计算三次绘制的变异性
+// 计算多次绘制的变异性（当前流程为两次）
 function calculateVariability(matrices) {
   if (matrices.length < 2) return 0;
   
@@ -1544,9 +1576,11 @@ async function saveDrawingData() {
 // 显示"正在保存"页面
 function showSavingPage() {
   const drawingInterface = document.getElementById('drawingInterface');
+  const descriptionPage = document.getElementById('descriptionPage');
   const completionPage = document.getElementById('completionPage');
   
   if (drawingInterface) drawingInterface.style.display = 'none';
+  if (descriptionPage) descriptionPage.style.display = 'none';
   if (completionPage) {
     completionPage.style.display = 'flex';
     // 更新内容为"正在保存"
