@@ -52,26 +52,44 @@ def find_latest_data_file(data_dir='data'):
         print(f"❌ 数据目录不存在: {data_path}")
         return None
     
-    # 查找所有csv文件
-    csv_files = list(data_path.glob('*.csv'))
-    if not csv_files:
-        print("❌ 未找到任何CSV文件")
+    # 查找可分析文件（csv/json）
+    data_files = list(data_path.glob('*.csv')) + list(data_path.glob('*.json'))
+    if not data_files:
+        print("❌ 未找到任何CSV/JSON文件")
         return None
     
     # 按修改时间排序，获取最新的
-    latest_file = max(csv_files, key=lambda p: p.stat().st_mtime)
+    latest_file = max(data_files, key=lambda p: p.stat().st_mtime)
     print(f"✓ 找到数据文件: {latest_file}")
     return latest_file
 
 def load_drawing_data(csv_file):
-    """从CSV文件加载绘制数据"""
+    """从CSV/JSON文件加载绘制数据"""
     try:
-        df = pd.read_csv(csv_file, sep='\t')
-        print(f"✓ CSV加载成功: {len(df)} 行")
+        path = Path(csv_file)
+        if path.suffix.lower() == '.json':
+            payload = json.loads(path.read_text(encoding='utf-8'))
+            rows = []
+            if isinstance(payload, dict):
+                rows = payload.get('payload', {}).get('data', {}).get('psychojs_rows', [])
+                if not rows:
+                    rows = payload.get('payload', {}).get('data', [])
+                if not rows and payload.get('payload', {}).get('data') and isinstance(payload.get('payload', {}).get('data'), dict):
+                    rows = [payload.get('payload', {}).get('data')]
+                if not rows:
+                    rows = [payload]
+            df = pd.DataFrame(rows)
+            print(f"✓ JSON加载成功: {len(df)} 行")
+        else:
+            try:
+                df = pd.read_csv(path, sep='\t')
+            except Exception:
+                df = pd.read_csv(path)
+            print(f"✓ CSV加载成功: {len(df)} 行")
         print(f"  列名: {list(df.columns)}")
         return df
     except Exception as e:
-        print(f"❌ CSV加载失败: {e}")
+        print(f"❌ 数据加载失败: {e}")
         return None
 
 def extract_drawing_matrix(df):

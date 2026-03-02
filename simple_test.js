@@ -524,6 +524,21 @@ function getCloudCaptureContext() {
   };
 }
 
+function getPsychoJsRowsSnapshot() {
+  try {
+    const exp = psychoJS?.experiment;
+    const rows = exp?._trialsData || exp?._trialList || exp?._data || [];
+    if (Array.isArray(rows)) {
+      return rows
+        .filter((row) => row && typeof row === 'object')
+        .map((row) => ({ ...row }));
+    }
+  } catch (error) {
+    console.warn('读取 PsychoJS 行数据失败:', error && error.message ? error.message : error);
+  }
+  return [];
+}
+
 async function uploadCloudDataDirect(payloadObj) {
   const ctx = getCloudCaptureContext();
   if (!ctx.isCloudCapturePath || !ctx.prefix) {
@@ -1489,6 +1504,8 @@ async function submitDescriptionAndSave() {
     const directPayload = {
       participant_id: expInfo.participant || experimentData?.participantInfo?.id || '',
       exp_name: expName,
+      experiment_uid: experimentData?.expUid || '',
+      user_uid: experimentData?.participantInfo?.id || expInfo.participant || '',
       drawing_matrices: allDrawingMatrices,
       drawing_timeline: drawingTimeline,
       matrix_size: matrixSize,
@@ -1497,7 +1514,8 @@ async function submitDescriptionAndSave() {
       first_drawing_duration: firstDrawingActivityTime || totalDrawingActivityTime,
       gaze_distribution_description: gazeDistributionDescription,
       gaze_description_length: gazeDistributionDescription.length,
-      drawing_time: util.MonotonicClock.getDateStr()
+      drawing_time: util.MonotonicClock.getDateStr(),
+      psychojs_rows: getPsychoJsRowsSnapshot()
     };
 
     const cloudSaveResult = await uploadCloudDataDirect(directPayload);
