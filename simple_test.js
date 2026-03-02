@@ -20,7 +20,9 @@ let experimentData = {
   startTime: null,
   endTime: null,
   participantInfo: {},
-  drawingData: null
+  drawingData: null,
+  expUid: '',
+  sourcePlatform: 'pavlovia'
 };
 
 // init psychoJS:
@@ -113,6 +115,7 @@ document.addEventListener('DOMContentLoaded', function() {
   experimentData.startTime = new Date().toISOString();
   setupScreenSecurity();
   window.onConsentAccepted = handleConsentAccepted;
+  hydrateParticipantIdentity();
   
   // 添加输入框回车事件
   const inputs = document.querySelectorAll('input[type="text"]');
@@ -129,6 +132,41 @@ document.addEventListener('DOMContentLoaded', function() {
     initDrawingInterface();
   }, 100);
 });
+
+function toBeijingISOString(value = Date.now()) {
+  const d = value instanceof Date ? value : new Date(value);
+  const shifted = new Date(d.getTime() + 8 * 60 * 60 * 1000);
+  return shifted.toISOString().replace('Z', '+08:00');
+}
+
+async function hydrateParticipantIdentity() {
+  try {
+    const ctx = getCloudCaptureContext();
+    const prefixMatch = String(ctx?.prefix || '').match(/(E\d{6})/i);
+    if (prefixMatch?.[1]) {
+      experimentData.expUid = prefixMatch[1].toUpperCase();
+    }
+    if (!ctx?.token) return;
+    const resp = await fetch(`/token/status?token=${encodeURIComponent(ctx.token)}`, { method: 'GET' });
+    if (!resp.ok) return;
+    const data = await resp.json().catch(() => ({}));
+    const tokenData = data?.data || {};
+    const uid = String(tokenData.user_uid || '').trim();
+    const expUid = String(tokenData.experiment_uid || '').trim();
+    if (uid) {
+      const idInput = document.getElementById('participantId');
+      if (idInput && !idInput.value) idInput.value = uid;
+      experimentData.participantInfo.id = uid;
+      expInfo.participant = uid;
+    }
+    if (expUid) experimentData.expUid = expUid;
+    if (ctx.isCloudCapturePath) {
+      experimentData.sourcePlatform = 'mycloud';
+    }
+  } catch (error) {
+    console.warn('自动填充被试编号失败:', error && error.message ? error.message : error);
+  }
+}
 
 function isLikelyMobileDevice() {
   const ua = navigator.userAgent || '';
@@ -539,6 +577,120 @@ function getPsychoJsRowsSnapshot() {
   return [];
 }
 
+function escapeCsvCell(value) {
+  const text = String(value ?? '');
+  if (/[",\n\r\t]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
+}
+
+function tableToCsv(rows) {
+  const lines = (Array.isArray(rows) ? rows : []).map((row) => (Array.isArray(row) ? row : []).map(escapeCsvCell).join(','));
+  return `\uFEFF${lines.join('\n')}`;
+}
+
+function matrixToCsv(matrix) {
+  if (!Array.isArray(matrix)) return '';
+  return tableToCsv(matrix.map((row) => (Array.isArray(row) ? row : [])));
+}
+
+function timelineToCsv(events) {
+  const rows = [['drawing_index', 'elapsed_ms', 'x_norm', 'y_norm', 'mode']];
+  (Array.isArray(events) ? events : []).forEach((event) => {
+    if (!Array.isArray(event) || event.length < 5) return;
+    rows.push([event[0], event[1], event[2], event[3], event[4]]);
+  });
+  return tableToCsv(rows);
+}
+
+function splitTimelineByDrawing(events) {
+  const byOne = [];
+  const byTwo = [];
+  (Array.isArray(events) ? events : []).forEach((event) => {
+    if (!Array.isArray(event) || event.length < 5) return;
+    const idx = Number(event[0]);
+    if (idx === 2) byTwo.push(event);
+    else byOne.push(event);
+  });
+  return { byOne, byTwo };
+}
+
+function buildMetadataPayload(variability) {
+  const endIso = new Date().toISOString();
+  const ua = navigator.userAgent || '';
+  const platform = navigator.platform || '';
+  const screenInfo = {
+    width: window.screen?.width || null,
+    height: window.screen?.height || null,
+    devicePixelRatio: window.devicePixelRatio || 1,
+    innerWidth: window.innerWidth,
+    innerHeight: window.innerHeight,
+  };
+  return {
+    schema: 'terrain_painter_export_v1',
+    source_platform: experimentData.sourcePlatform || 'pavlovia',
+    experiment_uid: experimentData.expUid || '',
+    exp_name: expName,
+    participant_id: experimentData?.participantInfo?.id || expInfo.participant || '',
+    participant_name: experimentData?.participantInfo?.name || expInfo.name || '',
+    start_time_utc: experimentData.startTime || '',
+    end_time_utc: endIso,
+    start_time_beijing: experimentData.startTime ? toBeijingISOString(experimentData.startTime) : '',
+    end_time_beijing: toBeijingISOString(endIso),
+    browser_user_agent: ua,
+    platform: platform,
+    screen: screenInfo,
+    refresh_rate_hz: null,
+    ip: 'server_side_capture',
+    matrix_size: matrixSize,
+    drawing_count: 2,
+    drawings_variability: variability,
+    first_drawing_duration_ms: firstDrawingActivityTime || totalDrawingActivityTime,
+    gaze_distribution_description: gazeDistributionDescription,
+    orientation_mapping: {
+      matrix_origin: 'top_left',
+      x_mapping: 'matrixX = (x / canvas.width) * matrixSize (left_to_right)',
+      y_mapping: 'matrixY = (y / canvas.height) * matrixSize (top_to_bottom)',
+      display_consistency: 'origin=upper'
+    }
+  };
+}
+
+function buildArtifactFiles(variability) {
+  const stamp = Date.now();
+  const matrix1 = Array.isArray(allDrawingMatrices?.[0]) ? allDrawingMatrices[0] : [];
+  const matrix2 = Array.isArray(allDrawingMatrices?.[1]) ? allDrawingMatrices[1] : [];
+  const { byOne, byTwo } = splitTimelineByDrawing(drawingTimeline || []);
+  const metadata = buildMetadataPayload(variability);
+
+  return [
+    {
+      file_name: `${stamp}_metadata.json`,
+      content_type: 'application/json; charset=utf-8',
+      content: JSON.stringify(metadata, null, 2),
+    },
+    {
+      file_name: `${stamp}_drawing1_timeline.csv`,
+      content_type: 'text/csv; charset=utf-8',
+      content: timelineToCsv(byOne),
+    },
+    {
+      file_name: `${stamp}_drawing2_timeline.csv`,
+      content_type: 'text/csv; charset=utf-8',
+      content: timelineToCsv(byTwo),
+    },
+    {
+      file_name: `${stamp}_drawing1_matrix.csv`,
+      content_type: 'text/csv; charset=utf-8',
+      content: matrixToCsv(matrix1),
+    },
+    {
+      file_name: `${stamp}_drawing2_matrix.csv`,
+      content_type: 'text/csv; charset=utf-8',
+      content: matrixToCsv(matrix2),
+    },
+  ];
+}
+
 async function uploadCloudDataDirect(payloadObj) {
   const ctx = getCloudCaptureContext();
   if (!ctx.isCloudCapturePath || !ctx.prefix) {
@@ -550,8 +702,8 @@ async function uploadCloudDataDirect(payloadObj) {
     access_token: ctx.token,
     download_policy: 'upload_only',
     payload: {
+      ...payloadObj,
       type: 'direct_save_audit',
-      data: payloadObj,
       saved_at: new Date().toISOString()
     }
   };
@@ -800,34 +952,26 @@ async function handleConsentAccepted() {
 function submitInfo() {
   const participantId = document.getElementById('participantId').value.trim();
   const participantName = document.getElementById('participantName').value.trim();
-  const participantAge = document.getElementById('participantAge').value.trim();
   
-  if (!participantId || !participantName || !participantAge) {
-    alert('请填写所有字段！');
-    return;
-  }
-  
-  if (isNaN(participantAge) || participantAge <= 0) {
-    alert('请输入有效的年龄！');
+  if (!participantId || !participantName) {
+    alert('请填写被试编号和姓名！');
     return;
   }
   
   // 保存到实验数据
   experimentData.participantInfo = {
     id: participantId,
-    name: participantName,
-    age: participantAge
+    name: participantName
   };
   
   // 更新 expInfo（供 PsychoJS 使用）
   expInfo.participant = participantId;
   expInfo.name = participantName;
-  expInfo.age = participantAge;
+  expInfo.age = '';
   
   // 使用 PsychoJS 记录被试信息
   psychoJS.experiment.addData('participant_id', participantId);
   psychoJS.experiment.addData('name', participantName);
-  psychoJS.experiment.addData('age', participantAge);
   psychoJS.experiment.addData('start_time', experimentData.startTime);
   psychoJS.experiment.addData('trial_type', 'participant_info');
   psychoJS.experiment.nextEntry();
@@ -840,7 +984,6 @@ function submitInfo() {
       JSON.stringify({
         id: participantId,
         name: participantName,
-        age: participantAge,
         start_time: experimentData.startTime
       })
     );
@@ -856,7 +999,7 @@ function submitInfo() {
     <strong>信息提交成功！</strong><br><br>
     被试编号：${participantId}<br>
     姓名：${participantName}<br>
-    年龄：${participantAge}<br><br>
+    <br>
     即将显示实验说明...
   `;
   
@@ -1501,21 +1644,15 @@ async function submitDescriptionAndSave() {
     await psychoJS.experiment.save();
     console.log('✓ 数据已成功保存到 Pavlovia 服务器');
 
+    experimentData.endTime = new Date().toISOString();
     const directPayload = {
+      platform: experimentData.sourcePlatform || (getCloudCaptureContext().isCloudCapturePath ? 'mycloud' : 'pavlovia'),
       participant_id: expInfo.participant || experimentData?.participantInfo?.id || '',
-      exp_name: expName,
-      experiment_uid: experimentData?.expUid || '',
       user_uid: experimentData?.participantInfo?.id || expInfo.participant || '',
-      drawing_matrices: allDrawingMatrices,
-      drawing_timeline: drawingTimeline,
-      matrix_size: matrixSize,
-      drawing_count: 2,
-      drawings_variability: variability,
-      first_drawing_duration: firstDrawingActivityTime || totalDrawingActivityTime,
-      gaze_distribution_description: gazeDistributionDescription,
-      gaze_description_length: gazeDistributionDescription.length,
+      experiment_uid: experimentData?.expUid || '',
+      exp_name: expName,
+      artifacts: buildArtifactFiles(variability),
       drawing_time: util.MonotonicClock.getDateStr(),
-      psychojs_rows: getPsychoJsRowsSnapshot()
     };
 
     const cloudSaveResult = await uploadCloudDataDirect(directPayload);
