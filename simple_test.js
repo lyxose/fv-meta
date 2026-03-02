@@ -26,6 +26,10 @@ let experimentData = {
   downloadPolicy: 'upload_only'
 };
 
+function syncMyCloudPsychoSaveGuard() {
+  window.__EXP_CAPTURE_DISABLE_PSYCHO_SAVE__ = experimentData.sourcePlatform === 'mycloud';
+}
+
 // init psychoJS:
 const psychoJS = new PsychoJS({
   debug: true
@@ -116,7 +120,10 @@ document.addEventListener('DOMContentLoaded', function() {
   experimentData.startTime = new Date().toISOString();
   setupScreenSecurity();
   window.onConsentAccepted = handleConsentAccepted;
-  hydrateParticipantIdentity();
+  syncMyCloudPsychoSaveGuard();
+  hydrateParticipantIdentity().finally(() => {
+    syncMyCloudPsychoSaveGuard();
+  });
   
   // 添加输入框回车事件
   const inputs = document.querySelectorAll('input[type="text"]');
@@ -167,6 +174,7 @@ async function hydrateParticipantIdentity() {
     }
     if (ctx.isCloudCapturePath) {
       experimentData.sourcePlatform = 'mycloud';
+      syncMyCloudPsychoSaveGuard();
     }
   } catch (error) {
     console.warn('自动填充被试编号失败:', error && error.message ? error.message : error);
