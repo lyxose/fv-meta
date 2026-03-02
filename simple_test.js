@@ -47,6 +47,7 @@ let drawingCount = 1; // 1, 2, 3
 let allDrawingMatrices = []; // 存储三次的绘制矩阵
 let currentNotification = null; // 存储当前显示的提示框
 let enableBrushSizeAdjust = false; // 开关：是否允许调整画笔大小
+let gazeDistributionDescription = ''; // 被试对注视分布的文字描述
 
 // 全屏与窗口监控
 let screenViolationCount = 0;
@@ -898,11 +899,13 @@ function startDrawingTask() {
   const root = document.getElementById('root');
   const instructionPage = document.getElementById('instructionPage');
   const comprehensionCheckPage = document.getElementById('comprehensionCheckPage');
+  const descriptionPage = document.getElementById('descriptionPage');
   const drawingInterface = document.getElementById('drawingInterface');
   
   if (root) root.style.display = 'none';
   if (instructionPage) instructionPage.style.display = 'none';
   if (comprehensionCheckPage) comprehensionCheckPage.style.display = 'none';
+  if (descriptionPage) descriptionPage.style.display = 'none';
   if (drawingInterface) drawingInterface.style.display = 'block';
   
   experimentSubmitted = false;
@@ -911,6 +914,7 @@ function startDrawingTask() {
   drawingTimeline = [];
   drawingTaskStartTime = performance.now();
   firstDrawingActivityTime = 0;
+  gazeDistributionDescription = '';
   
   // 重置绘制时长计时器（仅首次绘制需要）
   totalDrawingActivityTime = 0;
@@ -1194,6 +1198,15 @@ function handleTouchEnd(e) {
 }
 
 function handleKeyDown(e) {
+  const descriptionPage = document.getElementById('descriptionPage');
+  if (descriptionPage && descriptionPage.style.display === 'flex') {
+    if ((e.ctrlKey || e.metaKey) && e.code === 'Enter') {
+      e.preventDefault();
+      submitDescriptionAndSave();
+    }
+    return;
+  }
+
   const drawingInterface = document.getElementById('drawingInterface');
   if (!drawingInterface || drawingInterface.style.display !== 'block') {
     return;
@@ -1305,49 +1318,88 @@ async function confirmDrawing() {
       console.log(`🎨 开始第${drawingCount}次绘制`);
     }, minDrawingTime);
   } else {
-    // 所有绘制任务完成，准备上传
+    // 所有绘制任务完成，进入文字描述页面
     experimentSubmitted = true;
-    
-    // 计算三次绘制的变异性
-    const variability = calculateVariability(allDrawingMatrices);
-    console.log(`📊 三次绘制变异性: ${variability.toFixed(4)}`);
-    
-    // 显示"正在保存"页面
-    showSavingPage();
-    
-    // 后台异步保存数据
-    try {
-      const matrixJSON = JSON.stringify(allDrawingMatrices);
-      psychoJS.experiment.addData('drawing_matrices', matrixJSON);
-      psychoJS.experiment.addData('drawing_timeline', JSON.stringify(drawingTimeline));
-      psychoJS.experiment.addData('drawing_timeline_format', '[drawing_index,elapsed_ms,x_norm,y_norm,mode_1_add_0_subtract]');
-      psychoJS.experiment.addData('drawing_timeline_event_count', drawingTimeline.length);
-      psychoJS.experiment.addData('matrix_size', matrixSize);
-      psychoJS.experiment.addData('drawing_count', 3);
-      psychoJS.experiment.addData('drawings_variability', variability);
-      psychoJS.experiment.addData('first_drawing_duration', firstDrawingActivityTime || totalDrawingActivityTime);
-      psychoJS.experiment.addData('trial_type', 'drawing_data');
-      psychoJS.experiment.addData('drawing_time', util.MonotonicClock.getDateStr());
-      psychoJS.experiment.nextEntry();
-      
-      // 保存到 Pavlovia 服务器
-      await psychoJS.experiment.save();
-      console.log('✓ 数据已成功保存到 Pavlovia 服务器');
-      
-      // 保存成功后更新页面显示
-      updateSavingPageSuccess();
-      
-      // 1.5秒后自动退出（先退出全屏，避免触发离开警告）
-      setTimeout(() => {
-        finalizeExperimentAndQuit();
-      }, 1500);
-      
-    } catch (error) {
-      console.error('❌ 保存数据错误:', error);
-      updateSavingPageError(error);
+    showDescriptionPage();
+    console.log('📝 三次绘制完成，等待被试填写分布描述');
+  }
+}
+
+function showDescriptionPage() {
+  const drawingInterface = document.getElementById('drawingInterface');
+  const descriptionPage = document.getElementById('descriptionPage');
+  if (drawingInterface) drawingInterface.style.display = 'none';
+  if (descriptionPage) descriptionPage.style.display = 'flex';
+
+  const textarea = document.getElementById('distributionDescription');
+  if (textarea) {
+    textarea.value = '';
+    setTimeout(() => textarea.focus(), 80);
+  }
+}
+
+async function submitDescriptionAndSave() {
+  const descriptionPage = document.getElementById('descriptionPage');
+  if (!descriptionPage || descriptionPage.style.display !== 'flex') return;
+
+  const textarea = document.getElementById('distributionDescription');
+  const feedback = document.getElementById('descriptionFeedback');
+  const submitBtn = document.getElementById('submitDescriptionBtn');
+
+  const text = textarea ? textarea.value.trim() : '';
+  if (!text) {
+    if (feedback) {
+      feedback.style.display = 'block';
+      feedback.style.color = '#b42318';
+      feedback.textContent = '请先填写您对注视点分布的详细描述。';
     }
-    
-    console.log('📊 实验数据已完整保存');
+    return;
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = '正在提交...';
+  }
+  if (feedback) {
+    feedback.style.display = 'none';
+  }
+
+  gazeDistributionDescription = text;
+  showSavingPage();
+
+  try {
+    const variability = calculateVariability(allDrawingMatrices);
+    const matrixJSON = JSON.stringify(allDrawingMatrices);
+
+    psychoJS.experiment.addData('drawing_matrices', matrixJSON);
+    psychoJS.experiment.addData('drawing_timeline', JSON.stringify(drawingTimeline));
+    psychoJS.experiment.addData('drawing_timeline_format', '[drawing_index,elapsed_ms,x_norm,y_norm,mode_1_add_0_subtract]');
+    psychoJS.experiment.addData('drawing_timeline_event_count', drawingTimeline.length);
+    psychoJS.experiment.addData('matrix_size', matrixSize);
+    psychoJS.experiment.addData('drawing_count', 3);
+    psychoJS.experiment.addData('drawings_variability', variability);
+    psychoJS.experiment.addData('first_drawing_duration', firstDrawingActivityTime || totalDrawingActivityTime);
+    psychoJS.experiment.addData('gaze_distribution_description', gazeDistributionDescription);
+    psychoJS.experiment.addData('gaze_description_length', gazeDistributionDescription.length);
+    psychoJS.experiment.addData('trial_type', 'drawing_data');
+    psychoJS.experiment.addData('drawing_time', util.MonotonicClock.getDateStr());
+    psychoJS.experiment.nextEntry();
+
+    await psychoJS.experiment.save();
+    console.log('✓ 数据已成功保存到 Pavlovia 服务器');
+
+    updateSavingPageSuccess();
+
+    setTimeout(() => {
+      finalizeExperimentAndQuit();
+    }, 1500);
+  } catch (error) {
+    console.error('❌ 保存数据错误:', error);
+    updateSavingPageError(error);
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = '提交并完成实验';
+    }
   }
 }
 
@@ -1571,3 +1623,4 @@ window.clearCanvas = clearCanvas;
 window.confirmDrawing = confirmDrawing;
 window.toggleDrawMode = toggleDrawMode;
 window.setDrawMode = setDrawMode;
+window.submitDescriptionAndSave = submitDescriptionAndSave;

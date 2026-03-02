@@ -345,6 +345,41 @@
         margin-bottom: 15px;
         font-size: 18px;
       }
+
+      /* 描述填写页 */
+      #descriptionPage {
+        display: none;
+        width: 100vw;
+        height: 100vh;
+        background-color: #f0f0f0;
+        position: fixed;
+        top: 0;
+        left: 0;
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+      }
+
+      .description-content {
+        background: white;
+        padding: 36px;
+        border-radius: 12px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+        max-width: 780px;
+        width: 92%;
+      }
+
+      #distributionDescription {
+        width: 100%;
+        min-height: 220px;
+        resize: vertical;
+        border: 1px solid #ced4da;
+        border-radius: 8px;
+        padding: 12px;
+        line-height: 1.7;
+        font-size: 15px;
+        box-sizing: border-box;
+      }
       
       /* 加载动画 */
       @keyframes spin {
@@ -507,6 +542,20 @@
         <p>感谢您的参与。</p>
         <p>您的数据已经成功保存。</p>
         <p style="color: #999; font-size: 14px; margin-top: 30px;">请关闭此窗口。</p>
+      </div>
+    </div>
+
+    <!-- 三次绘制完成后的文字描述页 -->
+    <div id="descriptionPage">
+      <div class="description-content">
+        <h2 style="margin-top:0;color:#333;">请描述您猜测的注视点分布</h2>
+        <p style="color:#555;line-height:1.8;">
+          请用文字详细说明：您认为志愿者在搜索小圆点时，注视点主要集中在哪些区域、为什么会这样分布，以及哪些区域相对较少被注视。
+        </p>
+        <textarea id="distributionDescription" placeholder="例如：我认为注视点更多集中在圆盘中心略偏左上区域，因为..."></textarea>
+        <p style="margin:10px 0 6px 0;color:#6c757d;font-size:13px;">提示：可按 Ctrl + Enter 快速提交。</p>
+        <div id="descriptionFeedback" style="display:none;margin-bottom:10px;font-size:14px;"></div>
+        <button id="submitDescriptionBtn" onclick="submitDescriptionAndSave()" style="background:#28a745;">提交并完成实验</button>
       </div>
     </div>
     
