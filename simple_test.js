@@ -169,6 +169,23 @@ async function lockPortraitSafe() {
   return false;
 }
 
+async function ensurePortraitFullscreen() {
+  if (!isInFullscreen()) {
+    await requestFullscreenSafe();
+  }
+  if (MOBILE_SESSION) {
+    await lockPortraitSafe();
+    if (window.innerWidth > window.innerHeight) {
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      if (!isInFullscreen()) {
+        await requestFullscreenSafe();
+      }
+      await lockPortraitSafe();
+    }
+  }
+  updateOrientationMask();
+}
+
 function ensureOrientationMask() {
   if (orientationMaskEl) return orientationMaskEl;
   const mask = document.createElement('div');
@@ -242,13 +259,11 @@ function ensurePauseOverlay() {
   const resumeBtn = overlay.querySelector('#pauseResumeBtn');
   if (resumeBtn) {
     resumeBtn.addEventListener('click', async () => {
-      await requestFullscreenSafe();
-      await lockPortraitSafe();
+      await ensurePortraitFullscreen();
       if (isInFullscreen() && document.visibilityState === 'visible') {
         experimentPausedForRecovery = false;
         overlay.style.display = 'none';
       }
-      updateOrientationMask();
     });
   }
   pauseOverlayEl = overlay;
@@ -376,8 +391,7 @@ async function handleScreenViolation(reason) {
       pendingViolationWarningReason = reason;
     }
     pauseExperimentForRecovery(reason);
-    await requestFullscreenSafe();
-    await lockPortraitSafe();
+    await ensurePortraitFullscreen();
   } else {
     await terminateExperiment(`第2次违规：${reason}`);
   }
@@ -385,23 +399,22 @@ async function handleScreenViolation(reason) {
 
 function setupScreenSecurity() {
   // 尝试自动全屏（多数浏览器会因非手势触发而拒绝）
-  requestFullscreenSafe();
+  ensurePortraitFullscreen();
 
   // 首次用户交互时再次尝试全屏
   const firstGesture = async () => {
-    if (!isInFullscreen()) {
-      await requestFullscreenSafe();
-    }
-    await lockPortraitSafe();
-    updateOrientationMask();
+    await ensurePortraitFullscreen();
   };
   document.addEventListener('pointerdown', firstGesture, { once: true, capture: true });
 
-  document.addEventListener('fullscreenchange', () => {
+  document.addEventListener('fullscreenchange', async () => {
     if (experimentTerminated) return;
     if (!isInFullscreen()) {
       handleScreenViolation('退出全屏');
+      return;
     }
+    await ensurePortraitFullscreen();
+    updateOrientationMask();
   });
 
   document.addEventListener('visibilitychange', () => {
@@ -609,9 +622,7 @@ async function handleConsentAccepted() {
   const consentModal = document.getElementById('consentModal');
   if (consentModal) consentModal.style.display = 'none';
 
-  await requestFullscreenSafe();
-  await lockPortraitSafe();
-  updateOrientationMask();
+  await ensurePortraitFullscreen();
 
   const mobile = isLikelyMobileDevice();
   hasGyroscope = mobile ? await checkGyroscopeAvailability() : false;
