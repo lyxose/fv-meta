@@ -51,6 +51,7 @@ let enableBrushSizeAdjust = false; // 开关：是否允许调整画笔大小
 // 全屏与窗口监控
 let screenViolationCount = 0;
 let experimentTerminated = false;
+let experimentCompleted = false;
 let lastViolationTime = 0;
 const violationDebounceMs = 900;
 let pendingViolationWarningReason = '';
@@ -152,6 +153,27 @@ async function requestFullscreenSafe() {
     }
   } catch (e) {
     console.warn('⚠️ 全屏请求失败:', e && e.message ? e.message : e);
+  }
+  return false;
+}
+
+async function exitFullscreenSafe() {
+  try {
+    if (!isInFullscreen()) return true;
+    if (document.exitFullscreen) {
+      await document.exitFullscreen();
+      return true;
+    }
+    if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+      return true;
+    }
+    if (document.msExitFullscreen) {
+      document.msExitFullscreen();
+      return true;
+    }
+  } catch (e) {
+    console.warn('⚠️ 退出全屏失败:', e && e.message ? e.message : e);
   }
   return false;
 }
@@ -323,7 +345,7 @@ function showViolationWarning(reasonText) {
 }
 
 async function terminateExperiment(reason) {
-  if (experimentTerminated) return;
+  if (experimentTerminated || experimentCompleted) return;
   experimentTerminated = true;
   experimentSubmitted = true;
   experimentPausedForRecovery = false;
@@ -372,7 +394,7 @@ async function terminateExperiment(reason) {
 }
 
 async function handleScreenViolation(reason) {
-  if (experimentTerminated) return;
+  if (experimentTerminated || experimentCompleted) return;
   const now = Date.now();
   if (now - lastViolationTime < violationDebounceMs) return;
   lastViolationTime = now;
@@ -408,7 +430,7 @@ function setupScreenSecurity() {
   document.addEventListener('pointerdown', firstGesture, { once: true, capture: true });
 
   document.addEventListener('fullscreenchange', async () => {
-    if (experimentTerminated) return;
+    if (experimentTerminated || experimentCompleted) return;
     if (!isInFullscreen()) {
       handleScreenViolation('退出全屏');
       return;
@@ -418,7 +440,7 @@ function setupScreenSecurity() {
   });
 
   document.addEventListener('visibilitychange', () => {
-    if (experimentTerminated) return;
+    if (experimentTerminated || experimentCompleted) return;
     if (document.visibilityState !== 'visible') {
       handleScreenViolation('切出实验窗口');
       return;
@@ -436,7 +458,7 @@ function setupScreenSecurity() {
   });
 
   window.addEventListener('blur', () => {
-    if (experimentTerminated) return;
+    if (experimentTerminated || experimentCompleted) return;
     handleScreenViolation('窗口失去焦点');
   });
 
@@ -447,6 +469,22 @@ function setupScreenSecurity() {
     updateOrientationMask();
   });
   updateOrientationMask();
+}
+
+async function finalizeExperimentAndQuit() {
+  experimentCompleted = true;
+  experimentPausedForRecovery = false;
+  pendingViolationWarningReason = '';
+  if (pauseOverlayEl) pauseOverlayEl.style.display = 'none';
+  if (orientationMaskEl) orientationMaskEl.style.display = 'none';
+  if (orientationGuardListener) {
+    window.removeEventListener('deviceorientation', orientationGuardListener, true);
+    orientationGuardListener = null;
+  }
+  await exitFullscreenSafe();
+  setTimeout(() => {
+    psychoJS.quit({message: 'Thank you for your patience.', isCompleted: true});
+  }, 250);
 }
 
 async function checkGyroscopeAvailability() {
@@ -1299,9 +1337,9 @@ async function confirmDrawing() {
       // 保存成功后更新页面显示
       updateSavingPageSuccess();
       
-      // 1.5秒后自动退出
+      // 1.5秒后自动退出（先退出全屏，避免触发离开警告）
       setTimeout(() => {
-        psychoJS.quit({message: 'Thank you for your patience.', isCompleted: true});
+        finalizeExperimentAndQuit();
       }, 1500);
       
     } catch (error) {
@@ -1519,7 +1557,7 @@ function showCompletionPage() {
   
   // 5 秒后退出
   setTimeout(() => {
-    psychoJS.quit({message: 'Thank you for your patience.', isCompleted: true});
+    finalizeExperimentAndQuit();
   }, 5000);
 }
 
