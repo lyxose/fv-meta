@@ -124,6 +124,8 @@ function isLikelyMobileDevice() {
   return /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua);
 }
 
+const MOBILE_SESSION = isLikelyMobileDevice();
+
 function getFullscreenElement() {
   return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || null;
 }
@@ -155,6 +157,7 @@ async function requestFullscreenSafe() {
 }
 
 async function lockPortraitSafe() {
+  if (!MOBILE_SESSION) return true;
   try {
     if (screen.orientation && typeof screen.orientation.lock === 'function') {
       await screen.orientation.lock('portrait');
@@ -191,6 +194,10 @@ function ensureOrientationMask() {
 }
 
 function updateOrientationMask() {
+  if (!MOBILE_SESSION) {
+    if (orientationMaskEl) orientationMaskEl.style.display = 'none';
+    return;
+  }
   const mask = ensureOrientationMask();
   const isLandscape = window.innerWidth > window.innerHeight;
   const needMask = isLandscape || orientationOutOfRange;
@@ -264,7 +271,7 @@ function pauseExperimentForRecovery(reason) {
 }
 
 function startOrientationGuardMonitor() {
-  if (!hasGyroscope || orientationGuardListener) return;
+  if (!MOBILE_SESSION || !hasGyroscope || orientationGuardListener) return;
   orientationGuardListener = function(event) {
     if (experimentTerminated) return;
     const gamma = Number.isFinite(event.gamma) ? event.gamma : null;
