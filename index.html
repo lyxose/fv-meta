@@ -395,8 +395,8 @@
           检测到您的设备支持姿态传感器。请按以下方式持握手机：
         </p>
         <ul style="color:#555;line-height:1.8;">
-          <li>手机<strong>竖直</strong>（屏幕与地面大致垂直）</li>
           <li>手机底边与桌面边缘大致<strong>平行</strong></li>
+          <li>保持自然握持即可，无需刻意保持严格竖直角度</li>
           <li>请保持该姿态约 1.5 秒</li>
         </ul>
         <div id="orientationStatus" class="orientation-status">正在初始化传感器检测…</div>
@@ -573,8 +573,33 @@
           }
         };
 
+        var requiredAssets = ['Gabor.png', 'Background1.png', 'Background2.png', 'Background3.png', 'Background4.png'];
+        var assetBase = new URL('./assets/img/', window.location.href);
+
+        // 统一修正关键示例图路径，避免部署路径变化导致 404（例如退化成 /Background1.png）
+        Array.from(document.querySelectorAll('img')).forEach(function(img) {
+          if (!img) return;
+          var raw = img.getAttribute('src') || '';
+          var name = raw.split('/').pop();
+          if (requiredAssets.indexOf(name) >= 0) {
+            img.src = new URL(name, assetBase).toString();
+          }
+        });
+
         var images = Array.from(document.images || []).filter(function(img) {
           return img && img.src;
+        });
+
+        // 如果页面中缺失某些关键资源，也主动加入预加载队列，便于诊断进度/404
+        requiredAssets.forEach(function(name) {
+          var exists = images.some(function(img) {
+            return (img.src || '').indexOf('/' + name) >= 0;
+          });
+          if (!exists) {
+            var probe = new Image();
+            probe.src = new URL(name, assetBase).toString();
+            images.push(probe);
+          }
         });
         var total = images.length;
         var loaded = 0;
@@ -599,7 +624,10 @@
             markLoaded();
           } else {
             img.addEventListener('load', markLoaded, { once: true });
-            img.addEventListener('error', markLoaded, { once: true });
+            img.addEventListener('error', function() {
+              console.warn('资源加载失败:', img.src);
+              markLoaded();
+            }, { once: true });
           }
         });
       });

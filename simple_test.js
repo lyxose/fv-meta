@@ -55,6 +55,10 @@ let lastViolationTime = 0;
 const violationDebounceMs = 900;
 let pendingViolationWarningReason = '';
 let orientationMaskEl = null;
+let experimentPausedForRecovery = false;
+let pauseOverlayEl = null;
+let orientationOutOfRange = false;
+let orientationGuardListener = null;
 
 // 姿态/陀螺仪检测
 let orientationListener = null;
@@ -180,7 +184,7 @@ function ensureOrientationMask() {
     font-size: 18px;
     font-weight: 700;
   `;
-  mask.innerHTML = '请保持手机竖屏，不允许横屏旋转。';
+  mask.innerHTML = '<div id="orientationMaskText">请保持手机竖屏，不允许横屏旋转。</div>';
   document.body.appendChild(mask);
   orientationMaskEl = mask;
   return mask;
@@ -189,7 +193,86 @@ function ensureOrientationMask() {
 function updateOrientationMask() {
   const mask = ensureOrientationMask();
   const isLandscape = window.innerWidth > window.innerHeight;
-  mask.style.display = isLandscape ? 'flex' : 'none';
+  const needMask = isLandscape || orientationOutOfRange;
+  mask.style.display = needMask ? 'flex' : 'none';
+  const textEl = document.getElementById('orientationMaskText');
+  if (textEl) {
+    if (isLandscape) {
+      textEl.textContent = '请保持手机竖屏，不允许横屏旋转。';
+    } else if (orientationOutOfRange) {
+      textEl.textContent = '请保持手机底边与桌面平行（偏差过大，已暂停可视区域）。';
+    } else {
+      textEl.textContent = '请保持手机竖屏，不允许横屏旋转。';
+    }
+  }
+}
+
+function ensurePauseOverlay() {
+  if (pauseOverlayEl) return pauseOverlayEl;
+  const overlay = document.createElement('div');
+  overlay.id = 'pauseOverlay';
+  overlay.style.cssText = `
+    position: fixed;
+    inset: 0;
+    z-index: 4500;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.72);
+    color: #fff;
+    text-align: center;
+    padding: 20px;
+  `;
+  overlay.innerHTML = `
+    <div style="max-width:560px;width:92vw;background:rgba(20,20,20,0.92);border:1px solid rgba(255,255,255,0.2);border-radius:12px;padding:22px;">
+      <h3 style="margin:0 0 10px 0;font-size:24px;">实验已暂停</h3>
+      <p id="pauseOverlayReason" style="margin:0 0 14px 0;line-height:1.8;color:#e6e6e6;">检测到您退出全屏或离开实验窗口，请恢复后继续。</p>
+      <p style="margin:0 0 14px 0;line-height:1.8;color:#ffd6d6;">本次为第一次违规，再次发生将终止实验。</p>
+      <button id="pauseResumeBtn" style="padding:12px 20px;border:0;border-radius:8px;background:#0d6efd;color:#fff;font-weight:700;cursor:pointer;">恢复全屏并继续</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const resumeBtn = overlay.querySelector('#pauseResumeBtn');
+  if (resumeBtn) {
+    resumeBtn.addEventListener('click', async () => {
+      await requestFullscreenSafe();
+      await lockPortraitSafe();
+      if (isInFullscreen() && document.visibilityState === 'visible') {
+        experimentPausedForRecovery = false;
+        overlay.style.display = 'none';
+      }
+      updateOrientationMask();
+    });
+  }
+  pauseOverlayEl = overlay;
+  return overlay;
+}
+
+function pauseExperimentForRecovery(reason) {
+  experimentPausedForRecovery = true;
+  if (drawingCount === 1 && isDrawing && activityStartTime !== null) {
+    totalDrawingActivityTime += Date.now() - activityStartTime;
+    activityStartTime = null;
+  }
+  isDrawing = false;
+  const overlay = ensurePauseOverlay();
+  const reasonEl = document.getElementById('pauseOverlayReason');
+  if (reasonEl) {
+    reasonEl.textContent = `检测到异常：${reason}。请恢复全屏并返回实验页面后继续。`;
+  }
+  overlay.style.display = 'flex';
+}
+
+function startOrientationGuardMonitor() {
+  if (!hasGyroscope || orientationGuardListener) return;
+  orientationGuardListener = function(event) {
+    if (experimentTerminated) return;
+    const gamma = Number.isFinite(event.gamma) ? event.gamma : null;
+    if (gamma === null) return;
+    orientationOutOfRange = Math.abs(gamma) > 28;
+    updateOrientationMask();
+  };
+  window.addEventListener('deviceorientation', orientationGuardListener, true);
 }
 
 function showViolationWarning(reasonText) {
@@ -221,7 +304,16 @@ async function terminateExperiment(reason) {
   if (experimentTerminated) return;
   experimentTerminated = true;
   experimentSubmitted = true;
+  experimentPausedForRecovery = false;
   console.error('🛑 实验已终止:', reason);
+
+  if (pauseOverlayEl) {
+    pauseOverlayEl.style.display = 'none';
+  }
+  if (orientationGuardListener) {
+    window.removeEventListener('deviceorientation', orientationGuardListener, true);
+    orientationGuardListener = null;
+  }
 
   try {
     psychoJS.experiment.addData('termination_reason', reason);
@@ -276,6 +368,7 @@ async function handleScreenViolation(reason) {
     } else {
       pendingViolationWarningReason = reason;
     }
+    pauseExperimentForRecovery(reason);
     await requestFullscreenSafe();
     await lockPortraitSafe();
   } else {
@@ -313,6 +406,11 @@ function setupScreenSecurity() {
     if (pendingViolationWarningReason) {
       showViolationWarning(pendingViolationWarningReason);
       pendingViolationWarningReason = '';
+    }
+    if (experimentPausedForRecovery && isInFullscreen()) {
+      const overlay = ensurePauseOverlay();
+      experimentPausedForRecovery = false;
+      overlay.style.display = 'none';
     }
     updateOrientationMask();
   });
@@ -449,10 +547,9 @@ function startOrientationMonitor() {
     }
 
     const portrait = window.innerHeight >= window.innerWidth;
-    const vertical = beta !== null && Math.abs(Math.abs(beta) - 90) <= 25;
     const bottomParallel = gamma !== null && Math.abs(gamma) <= 20;
 
-    if (portrait && vertical && bottomParallel) {
+    if (portrait && bottomParallel) {
       if (!orientationStableStart) orientationStableStart = now;
       const stableMs = now - orientationStableStart;
       if (statusEl) {
@@ -471,7 +568,7 @@ function startOrientationMonitor() {
       orientationReady = false;
       if (continueBtn) continueBtn.disabled = true;
       if (statusEl) {
-        statusEl.textContent = '请将手机竖直，并让底边与桌面边缘大致平行。';
+        statusEl.textContent = '请让手机底边与桌面边缘大致平行。';
       }
     }
   };
@@ -516,6 +613,8 @@ async function handleConsentAccepted() {
     await terminateExperiment('姿态传感器权限被拒绝，无法进行姿态校准');
     return;
   }
+
+  startOrientationGuardMonitor();
 
   psychoJS.experiment.addData('device_is_mobile', mobile ? 1 : 0);
   psychoJS.experiment.addData('device_has_gyroscope', hasGyroscope ? 1 : 0);
@@ -913,6 +1012,7 @@ function recordDrawingTimelineEvent(x, y, mode) {
 
 // 鼠标事件 - 双击切换模式
 function handleMouseDown(e) {
+  if (experimentPausedForRecovery) return;
   const now = Date.now();
   const timeDiff = now - lastClickTime;
   
@@ -997,6 +1097,7 @@ function handleWheel(e) {
 }
 
 function handleTouchStart(e) {
+  if (experimentPausedForRecovery) return;
   e.preventDefault();
   const touch = e.touches[0];
   const rect = canvas.getBoundingClientRect();
@@ -1039,6 +1140,11 @@ function handleTouchEnd(e) {
 function handleKeyDown(e) {
   const drawingInterface = document.getElementById('drawingInterface');
   if (!drawingInterface || drawingInterface.style.display !== 'block') {
+    return;
+  }
+
+  if (experimentPausedForRecovery) {
+    e.preventDefault();
     return;
   }
   
@@ -1088,6 +1194,10 @@ function setDrawMode(mode) {
 }
 
 async function confirmDrawing() {
+  if (experimentPausedForRecovery) {
+    console.log('⏸️ 当前处于暂停恢复状态，暂不能提交');
+    return;
+  }
   if (experimentSubmitted) {
     console.log('⚠️ 数据已提交，请勿重复提交');
     return;
