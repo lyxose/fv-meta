@@ -80,7 +80,7 @@ const fullscreenGuardGraceMs = 1200;
 
 // 姿态/陀螺仪检测
 let orientationListener = null;
-let orientationStableStart = null;
+let orientationStableStar1t = null;
 let orientationReady = false;
 let orientationPermissionState = 'unknown';
 let hasGyroscope = false;
@@ -967,13 +967,14 @@ async function handleConsentAccepted() {
   const consentModal = document.getElementById('consentModal');
   if (consentModal) consentModal.style.display = 'none';
 
-  await ensurePortraitFullscreen();
-  screenSecurityArmed = true;
-  screenSecurityArmAt = Date.now();
-  if (isInFullscreen()) {
-    fullscreenEntryConfirmed = true;
-    fullscreenConfirmedAt = Date.now();
-  }
+  // 不立即进入全屏，等到理解检验通过后再进入
+  // await ensurePortraitFullscreen();
+  // screenSecurityArmed = true;
+  // screenSecurityArmAt = Date.now();
+  // if (isInFullscreen()) {
+  //   fullscreenEntryConfirmed = true;
+  //   fullscreenConfirmedAt = Date.now();
+  // }
 
   const mobile = isLikelyMobileDevice();
   hasGyroscope = mobile ? await checkGyroscopeAvailability() : false;
@@ -1127,10 +1128,18 @@ function checkComprehension() {
     feedback.style.backgroundColor = '#d4edda';
     feedback.style.color = '#155724';
     feedback.style.border = '1px solid #c3e6cb';
-    feedback.innerHTML = '<strong>✓ 答案正确！</strong><br>即将进入绘制任务...';
+    feedback.innerHTML = '<strong>✓ 答案正确！</strong><br>即将进入全屏绘制任务...';
     console.log('✓ 理解检验通过');
     
-    setTimeout(() => {
+    setTimeout(async () => {
+      // 理解检验通过后再进入全屏
+      await ensurePortraitFullscreen();
+      screenSecurityArmed = true;
+      screenSecurityArmAt = Date.now();
+      if (isInFullscreen()) {
+        fullscreenEntryConfirmed = true;
+        fullscreenConfirmedAt = Date.now();
+      }
       startDrawingTask();
     }, 1500);
   } else {
