@@ -190,12 +190,43 @@
         overflow-y: auto;
       }
       
+      /* 示意图和刺激图的容器布局 */
+      .instruction-layout {
+        display: flex;
+        gap: 30px;
+        align-items: flex-start;
+        margin: 20px 0;
+      }
+      
+      .posture-diagram-wrapper {
+        flex: 0 0 auto;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+      }
+      
+      .posture-diagram-wrapper img {
+        max-height: 600px;
+        width: auto;
+        max-width: 100%;
+        object-fit: contain;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+      }
+      
+      .examples-wrapper {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      
       .background-examples {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
         gap: 16px;
         justify-items: center;
-        margin: 20px 0;
+        width: 100%;
       }
       
       .background-examples img {
@@ -210,6 +241,25 @@
       @media (orientation: portrait) {
         .instruction-content {
           max-width: 95vw;
+          padding: 30px 20px;
+        }
+        
+        .instruction-layout {
+          flex-direction: column;
+          gap: 20px;
+        }
+        
+        .posture-diagram-wrapper {
+          width: 100%;
+          justify-content: center;
+        }
+        
+        .posture-diagram-wrapper img {
+          max-height: 350px;
+        }
+        
+        .examples-wrapper {
+          width: 100%;
         }
         
         .background-examples img {
@@ -493,15 +543,23 @@
         <p>欢迎参加本次实验！</p>
         <p>
           我们之前请了二十多位志愿者做了一个小测试：<br>
-          他们需要在类似下面这些示例图的随机花纹里，尽快找到一个小圆点：
+          他们需要在类似下面这些示例图的随机花纹里，尽快找到一个很小的光斑：
           <img src="./assets/img/Gabor.png" alt="光斑示例" style="vertical-align:middle;width:1.2em;height:1.2em;border-radius:50%;object-fit:cover;margin:0 4px 0 4px;box-shadow:0 2px 8px #ccc;">
-          这个小圆点会被随机放在圆形花纹区域里的任何地方，每次搜索只有5秒钟时间。
+          <br>它会被随机放在圆形花纹区域里的任何地方，颜色也很暗淡，所以几乎不可能一眼看见。每次搜索只有5秒钟时间。
         </p>
-        <div class="background-examples">
-          <img src="./assets/img/Background1.png" alt="背景示例1">
-          <img src="./assets/img/Background2.png" alt="背景示例2">
-          <img src="./assets/img/Background3.png" alt="背景示例3">
-          <img src="./assets/img/Background4.png" alt="背景示例4">
+        <div class="instruction-layout">
+          <div class="posture-diagram-wrapper">
+            <img src="./assets/img/坐姿实验示意图.png" alt="被试观看屏幕的坐姿示意图" title="实验坐姿示意图">
+          </div>
+          <div class="examples-wrapper">
+            <p style="text-align:center;margin-top:0;color:#555;"><strong>刺激图示例</strong></p>
+            <div class="background-examples">
+              <img src="./assets/img/Background1.png" alt="背景示例1">
+              <img src="./assets/img/Background2.png" alt="背景示例2">
+              <img src="./assets/img/Background3.png" alt="背景示例3">
+              <img src="./assets/img/Background4.png" alt="背景示例4">
+            </div>
+          </div>
         </div>
         <p>
           现在，请您根据自己的直觉，猜一猜这些人在找小圆点的过程中，眼睛会更多地看哪些地方，哪些地方看得少。<br>
