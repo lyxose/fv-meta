@@ -909,7 +909,7 @@ function startOrientationMonitor() {
     }
 
     const portrait = window.innerHeight >= window.innerWidth;
-    const bottomParallel = gamma !== null && Math.abs(gamma) <= 20;
+    const bottomParallel = gamma !== null && Math.abs(gamma) <= 10;
 
     if (portrait && bottomParallel) {
       if (!orientationStableStart) orientationStableStart = now;
