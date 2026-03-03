@@ -86,6 +86,9 @@ let orientationPermissionState = 'unknown';
 let hasGyroscope = false;
 let orientationSamples = [];
 
+// 姿态阈值统一配置（单位：度）
+const ORIENTATION_TILT_GAMMA_LIMIT_DEG = 10;
+
 // 绘制时序记录
 let drawingTimeline = [];
 let drawingTaskStartTime = null;
@@ -374,7 +377,7 @@ function startOrientationGuardMonitor() {
     if (experimentTerminated) return;
     const gamma = Number.isFinite(event.gamma) ? event.gamma : null;
     if (gamma === null) return;
-    orientationOutOfRange = Math.abs(gamma) > 28;
+    orientationOutOfRange = Math.abs(gamma) > ORIENTATION_TILT_GAMMA_LIMIT_DEG;
     updateOrientationMask();
   };
   window.addEventListener('deviceorientation', orientationGuardListener, true);
@@ -909,7 +912,7 @@ function startOrientationMonitor() {
     }
 
     const portrait = window.innerHeight >= window.innerWidth;
-    const bottomParallel = gamma !== null && Math.abs(gamma) <= 10;
+    const bottomParallel = gamma !== null && Math.abs(gamma) <= ORIENTATION_TILT_GAMMA_LIMIT_DEG;
 
     if (portrait && bottomParallel) {
       if (!orientationStableStart) orientationStableStart = now;
