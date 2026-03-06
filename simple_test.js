@@ -80,14 +80,17 @@ const fullscreenGuardGraceMs = 1200;
 
 // 姿态/陀螺仪检测
 let orientationListener = null;
-let orientationStableStar1t = null;
+let orientationStableStart = null;
 let orientationReady = false;
 let orientationPermissionState = 'unknown';
 let hasGyroscope = false;
 let orientationSamples = [];
+let orientationFirstDataAt = 0;
+let orientationDataTimeoutTimer = null;
 
 // 姿态阈值统一配置（单位：度）
 const ORIENTATION_TILT_GAMMA_LIMIT_DEG = 10;
+const ORIENTATION_DATA_TIMEOUT_MS = 4000;
 
 // 绘制时序记录
 let drawingTimeline = [];
@@ -882,6 +885,10 @@ function stopOrientationMonitor() {
     window.removeEventListener('deviceorientation', orientationListener, true);
     orientationListener = null;
   }
+  if (orientationDataTimeoutTimer) {
+    clearTimeout(orientationDataTimeoutTimer);
+    orientationDataTimeoutTimer = null;
+  }
 }
 
 function startOrientationMonitor() {
@@ -890,7 +897,24 @@ function startOrientationMonitor() {
   const continueBtn = document.getElementById('orientationContinueBtn');
   orientationStableStart = null;
   orientationReady = false;
+  orientationFirstDataAt = 0;
   if (continueBtn) continueBtn.disabled = true;
+  if (statusEl) {
+    statusEl.textContent = '正在初始化传感器检测，请保持手机屏幕正立，不要左右倾斜。';
+  }
+  if (valuesEl) {
+    valuesEl.textContent = 'β: --°, γ: --°';
+  }
+  if (orientationDataTimeoutTimer) {
+    clearTimeout(orientationDataTimeoutTimer);
+  }
+  orientationDataTimeoutTimer = setTimeout(() => {
+    if (orientationFirstDataAt > 0) return;
+    if (continueBtn) continueBtn.disabled = true;
+    if (statusEl) {
+      statusEl.textContent = '当前设备隐私设置不支持手机端姿态读取。请立即截图本页面并联系主试，主试开放重新打开链接权限后，请在电脑端重启实验。';
+    }
+  }, ORIENTATION_DATA_TIMEOUT_MS);
 
   orientationListener = function(event) {
     const beta = Number.isFinite(event.beta) ? event.beta : null;
@@ -898,6 +922,11 @@ function startOrientationMonitor() {
     const now = performance.now();
 
     if (beta !== null && gamma !== null) {
+      if (!orientationFirstDataAt) orientationFirstDataAt = now;
+      if (orientationDataTimeoutTimer) {
+        clearTimeout(orientationDataTimeoutTimer);
+        orientationDataTimeoutTimer = null;
+      }
       orientationSamples.push({
         t: Math.round(now),
         beta: Number(beta.toFixed(2)),
@@ -932,8 +961,8 @@ function startOrientationMonitor() {
       orientationStableStart = null;
       orientationReady = false;
       if (continueBtn) continueBtn.disabled = true;
-      if (statusEl) {
-        statusEl.textContent = '请让手机底边与桌面边缘大致平行。';
+      if (statusEl && orientationFirstDataAt > 0) {
+        statusEl.textContent = '请不要左右倾斜手机，确保屏幕正立，并让手机底边与桌面边缘大致平行。';
       }
     }
   };
@@ -972,7 +1001,7 @@ async function handleConsentAccepted() {
   hasGyroscope = mobile ? await checkGyroscopeAvailability() : false;
 
   if (mobile && orientationPermissionState === 'denied') {
-    await terminateExperiment('姿态传感器权限被拒绝，无法进行姿态校准');
+    await terminateExperiment('姿态传感器权限被拒绝，无法进行姿态校准。请截图并联系主试开放重新打开链接权限，然后在电脑端重启实验。');
     return;
   }
 
