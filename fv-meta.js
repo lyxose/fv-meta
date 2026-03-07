@@ -88,6 +88,8 @@ let orientationSamples = [];
 let orientationFirstDataAt = 0;
 let orientationDataTimeoutTimer = null;
 let refreshGuardArmed = false;
+let refreshGuardTouchStartY = null;
+let refreshGuardPullCandidate = false;
 
 // 姿态阈值统一配置（单位：度）
 const ORIENTATION_TILT_GAMMA_LIMIT_DEG = 10;
@@ -569,7 +571,53 @@ function setupScreenSecurity() {
 function initRefreshGuard() {
   if (refreshGuardArmed) return;
   refreshGuardArmed = true;
-  const refreshWarning = '请耐心等待加载，实验只能打开一次。强制刷新将导致实验无法访问。\n如有疑问请截屏反馈到邮箱：luyx@psych.ac.cn';
+  const refreshWarning = '请耐心等待加载，因为实验只能打开一次，强制刷新将导致实验无法访问。若等待时间超过3分钟，可以截屏并描述问题，反馈到邮箱：luyx@psych.ac.cn';
+
+  // 移动端下拉刷新防护：关闭 overscroll 并拦截顶端下拉手势。
+  const guardStyle = document.createElement('style');
+  guardStyle.id = 'refreshGuardStyle';
+  guardStyle.textContent = 'html, body { overscroll-behavior-y: none; }';
+  document.head.appendChild(guardStyle);
+
+  const findScrollableParent = (el) => {
+    let current = el;
+    while (current && current !== document.body) {
+      if (current instanceof HTMLElement) {
+        const style = window.getComputedStyle(current);
+        const scrollable = /(auto|scroll|overlay)/.test(style.overflowY || '');
+        if (scrollable && current.scrollHeight > current.clientHeight) {
+          return current;
+        }
+      }
+      current = current.parentElement;
+    }
+    return null;
+  };
+
+  document.addEventListener('touchstart', (event) => {
+    if (experimentCompleted || experimentTerminated) return;
+    const touch = event.touches && event.touches[0];
+    if (!touch) return;
+    refreshGuardTouchStartY = touch.clientY;
+    const scrollParent = findScrollableParent(event.target);
+    const atTop = scrollParent ? scrollParent.scrollTop <= 0 : (window.scrollY <= 0);
+    refreshGuardPullCandidate = atTop;
+  }, { passive: true, capture: true });
+
+  document.addEventListener('touchmove', (event) => {
+    if (experimentCompleted || experimentTerminated) return;
+    const touch = event.touches && event.touches[0];
+    if (!touch || refreshGuardTouchStartY === null) return;
+    const dy = touch.clientY - refreshGuardTouchStartY;
+    if (refreshGuardPullCandidate && dy > 10) {
+      event.preventDefault();
+    }
+  }, { passive: false, capture: true });
+
+  document.addEventListener('touchend', () => {
+    refreshGuardTouchStartY = null;
+    refreshGuardPullCandidate = false;
+  }, { passive: true, capture: true });
 
   window.addEventListener('beforeunload', (event) => {
     if (experimentCompleted || experimentTerminated) return;
