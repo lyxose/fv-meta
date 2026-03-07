@@ -1,5 +1,5 @@
 /************************ 
- * Simple_Test *
+ * fv-meta *
  ************************/
 
 import { core, data, sound, util, visual, hardware } from './lib/psychojs-2025.2.4.js';
@@ -8,7 +8,7 @@ const { TrialHandler, MultiStairHandler } = data;
 const { Scheduler } = util;
 
 // store info about the experiment session:
-let expName = 'simple_test';
+let expName = 'fv-meta';
 let expInfo = {
     'participant': `${util.pad(Number.parseFloat(util.randint(0, 999999)).toFixed(0), 6)}`,
     'session': '001',
@@ -87,6 +87,7 @@ let hasGyroscope = false;
 let orientationSamples = [];
 let orientationFirstDataAt = 0;
 let orientationDataTimeoutTimer = null;
+let refreshGuardArmed = false;
 
 // 姿态阈值统一配置（单位：度）
 const ORIENTATION_TILT_GAMMA_LIMIT_DEG = 10;
@@ -124,6 +125,7 @@ document.addEventListener('DOMContentLoaded', function() {
   console.log('📄 页面加载完成');
   
   experimentData.startTime = new Date().toISOString();
+  initRefreshGuard();
   setupScreenSecurity();
   window.onConsentAccepted = handleConsentAccepted;
   syncMyCloudPsychoSaveGuard();
@@ -304,6 +306,10 @@ function updateOrientationMask() {
     if (orientationMaskEl) orientationMaskEl.style.display = 'none';
     return;
   }
+  if (!isDrawingInterfaceActive()) {
+    if (orientationMaskEl) orientationMaskEl.style.display = 'none';
+    return;
+  }
   const mask = ensureOrientationMask();
   const isLandscape = window.innerWidth > window.innerHeight;
   const needMask = isLandscape || orientationOutOfRange;
@@ -318,6 +324,14 @@ function updateOrientationMask() {
       textEl.textContent = '请保持手机竖屏，不允许横屏旋转。';
     }
   }
+}
+
+function isDrawingInterfaceActive() {
+  const drawingInterface = document.getElementById('drawingInterface');
+  if (!drawingInterface) return false;
+  if (drawingInterface.style.display === 'none') return false;
+  const computed = window.getComputedStyle(drawingInterface);
+  return computed.display !== 'none' && !experimentCompleted;
 }
 
 function ensurePauseOverlay() {
@@ -550,6 +564,28 @@ function setupScreenSecurity() {
     updateOrientationMask();
   });
   updateOrientationMask();
+}
+
+function initRefreshGuard() {
+  if (refreshGuardArmed) return;
+  refreshGuardArmed = true;
+  const refreshWarning = '请耐心等待加载，实验只能打开一次。强制刷新将导致实验无法访问。\n如有疑问请截屏反馈到邮箱：luyx@psych.ac.cn';
+
+  window.addEventListener('beforeunload', (event) => {
+    if (experimentCompleted || experimentTerminated) return;
+    event.preventDefault();
+    event.returnValue = refreshWarning;
+    return refreshWarning;
+  });
+
+  window.addEventListener('keydown', (event) => {
+    if (experimentCompleted || experimentTerminated) return;
+    const key = String(event.key || '').toLowerCase();
+    const isRefreshKey = key === 'f5' || ((event.ctrlKey || event.metaKey) && key === 'r');
+    if (!isRefreshKey) return;
+    event.preventDefault();
+    alert(refreshWarning);
+  }, true);
 }
 
 async function finalizeExperimentAndQuit() {
@@ -1235,6 +1271,7 @@ function startDrawingTask() {
   if (comprehensionCheckPage) comprehensionCheckPage.style.display = 'none';
   if (descriptionPage) descriptionPage.style.display = 'none';
   if (drawingInterface) drawingInterface.style.display = 'block';
+  updateOrientationMask();
   
   experimentSubmitted = false;
   drawingCount = 1;
