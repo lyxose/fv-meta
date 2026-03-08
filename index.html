@@ -444,6 +444,43 @@
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
       }
+
+      .consent-spinner {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(255, 255, 255, 0.45);
+        border-top-color: #ffffff;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        vertical-align: -3px;
+        margin-right: 8px;
+      }
+
+      .consent-alert-box {
+        margin: 0 0 14px 0;
+        border: 1px solid #f5c2c7;
+        background: #fff5f5;
+        color: #842029;
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .consent-error-box {
+        margin-top: 12px;
+        border: 1px solid #f5c2c7;
+        background: #fff5f5;
+        color: #842029;
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 12px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        max-height: 150px;
+        overflow-y: auto;
+      }
     </style>
   </head>
   <body>
@@ -452,6 +489,10 @@
     <div id="consentModal" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.5);z-index:2000;display:flex;align-items:center;justify-content:center;">
       <div style="background:#fff;padding:36px 32px 24px 32px;border-radius:12px;max-width:600px;width:92vw;box-shadow:0 2px 16px rgba(0,0,0,0.18);font-size:16px;line-height:1.7;color:#333;">
         <h2 style="text-align:center;margin-bottom:18px;font-size:24px;">在线实验知情同意书</h2>
+        <div class="consent-alert-box">
+          <strong>重要：</strong>本实验链接仅可进入一次。全程请勿使用浏览器刷新、下拉刷新、返回按钮或重新打开链接。<br>
+          若加载异常，请仅使用本页面内的“重试加载”按钮。
+        </div>
         <div style="max-height:48vh;overflow-y:auto;margin-bottom:18px;">
           <p><strong>研究目的</strong><br>
           您今天参加的实验是中国科学院心理研究所视觉与注意实验室研究计划的一部分。该计划主要探讨与人类视觉加工有关的心理活动。</p>
@@ -469,13 +510,20 @@
           2）我知晓参与完全自愿，可随时退出且不会受到任何惩罚；<br>
           3）我知晓本研究收集的信息将严格保密，不会以任何可识别个人身份的方式公开，除非法律要求。</p>
         </div>
-        <button id="consentAgreeBtn" style="width:100%;padding:14px 0;background:#007bff;color:#fff;border:none;border-radius:6px;font-size:18px;cursor:pointer;" disabled>我同意</button>
+        <button id="consentAgreeBtn" style="width:100%;padding:14px 0;background:#8a8f99;color:#fff;border:none;border-radius:6px;font-size:18px;cursor:not-allowed;opacity:0.85;" disabled>
+          <span id="consentAgreeSpinner" class="consent-spinner"></span>
+          <span id="consentAgreeText">资源加载中，请稍候...</span>
+        </button>
         <div id="consentLoadWrap" style="margin-top:14px;">
-          <div style="font-size:13px;color:#666;margin-bottom:6px;">资源加载中，请稍候…</div>
+          <div id="consentStatusText" style="font-size:13px;color:#666;margin-bottom:6px;">资源加载中，请稍候...</div>
           <div style="width:100%;height:8px;background:#eee;border-radius:999px;overflow:hidden;">
             <div id="consentLoadBar" style="width:0%;height:100%;background:#28a745;transition:width 0.2s ease;"></div>
           </div>
           <div id="consentLoadText" style="font-size:12px;color:#888;margin-top:6px;text-align:right;">0%</div>
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <button id="consentRetryBtn" type="button" style="width:auto;padding:8px 14px;background:#6c757d;font-size:13px;">重试加载</button>
+          </div>
+          <div id="consentErrorBox" class="consent-error-box" style="display:none;"></div>
         </div>
       </div>
     </div>
@@ -643,106 +691,338 @@
       </div>
     </div>
     
-    <!-- external libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jquery-ui-dist@1.12.1/jquery-ui.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/preloadjs@1.0.1/lib/preloadjs.min.js"></script>
-    <!-- experiment -->
+    <!-- experiment bootstrap -->
     <script>
-      // 知情同意书逻辑 + 资源加载进度
       document.addEventListener('DOMContentLoaded', function() {
-        var consentModal = document.getElementById('consentModal');
-        var rootDiv = document.getElementById('root');
         var agreeBtn = document.getElementById('consentAgreeBtn');
-        var loadWrap = document.getElementById('consentLoadWrap');
+        var agreeSpinner = document.getElementById('consentAgreeSpinner');
+        var agreeText = document.getElementById('consentAgreeText');
+        var retryBtn = document.getElementById('consentRetryBtn');
         var loadBar = document.getElementById('consentLoadBar');
         var loadText = document.getElementById('consentLoadText');
+        var statusText = document.getElementById('consentStatusText');
+        var errorBox = document.getElementById('consentErrorBox');
 
-        function setProgress(loaded, total) {
-          var percent = total === 0 ? 100 : Math.round((loaded / total) * 100);
-          if (loadBar) loadBar.style.width = percent + '%';
-          if (loadText) loadText.textContent = percent + '%';
+        var requiredAssets = ['Gabor.png', 'Background1.png', 'Background2.png', 'Background3.png', 'Background4.png'];
+        var assetBase = new URL('./assets/img/', window.location.href);
+        var started = false;
+        var bootAttempt = 0;
+        var maxAutoRetries = 3;
+        var bootInProgress = false;
+        var ready = false;
+        var simulatedPercent = 0;
+        var simulatedTimer = null;
+
+        var depConfigs = [
+          {
+            key: 'jquery-css',
+            type: 'css',
+            urls: [
+              './lib/vendor/jquery-ui.min.css',
+              'https://cdn.jsdelivr.net/npm/jquery-ui-dist@1.12.1/jquery-ui.min.css',
+              'https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css'
+            ],
+            verify: function() { return true; }
+          },
+          {
+            key: 'jquery',
+            type: 'script',
+            urls: [
+              './lib/vendor/jquery.min.js',
+              'https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js',
+              'https://code.jquery.com/jquery-3.6.0.min.js'
+            ],
+            verify: function() { return typeof window.jQuery !== 'undefined'; }
+          },
+          {
+            key: 'jquery-ui',
+            type: 'script',
+            urls: [
+              './lib/vendor/jquery-ui.min.js',
+              'https://cdn.jsdelivr.net/npm/jquery-ui-dist@1.12.1/jquery-ui.min.js',
+              'https://code.jquery.com/ui/1.12.1/jquery-ui.min.js'
+            ],
+            verify: function() { return !!(window.jQuery && window.jQuery.ui && window.jQuery.ui.dialog); }
+          },
+          {
+            key: 'preloadjs',
+            type: 'script',
+            urls: [
+              './lib/vendor/preloadjs.min.js',
+              'https://cdn.jsdelivr.net/npm/preloadjs@1.0.1/lib/preloadjs.min.js',
+              'https://cdnjs.cloudflare.com/ajax/libs/PreloadJS/1.0.1/preloadjs.min.js'
+            ],
+            verify: function() {
+              return !!(window.createjs && (window.createjs.PreloadQueue || window.createjs.LoadQueue));
+            }
+          }
+        ];
+
+        var bootSummary = {
+          totalSteps: depConfigs.length + requiredAssets.length + 1,
+          doneSteps: {},
+          errors: []
+        };
+
+        function isIgnorableError(message) {
+          var text = String(message || '');
+          if (text.indexOf('ScriptProcessorNode is deprecated') >= 0) return true;
+          if (text.indexOf('Tone.js') >= 0) return true;
+          return false;
         }
 
-        function enableAgree() {
-          if (agreeBtn) {
-            agreeBtn.disabled = false;
-            agreeBtn.style.cursor = 'pointer';
+        function setStatus(text) {
+          if (statusText) statusText.textContent = text;
+        }
+
+        function renderErrorBox() {
+          if (!errorBox) return;
+          if (!bootSummary.errors.length) {
+            errorBox.style.display = 'none';
+            errorBox.textContent = '';
+            return;
           }
-          if (loadWrap) {
-            loadWrap.querySelector('div').textContent = '加载完成，可以开始';
+          var lines = ['[关键报错信息] 请截图并发送到 luyx@psych.ac.cn 申请重新启动实验'];
+          bootSummary.errors.forEach(function(err, idx) {
+            lines.push((idx + 1) + '. [' + err.code + '] ' + err.message);
+            if (err.detail) lines.push('   detail: ' + err.detail);
+            lines.push('   time: ' + err.time);
+          });
+          errorBox.style.display = '';
+          errorBox.textContent = lines.join('\n');
+        }
+
+        function addError(code, message, detail) {
+          if (!message || isIgnorableError(message)) return;
+          bootSummary.errors.push({
+            code: code || 'ERR_UNKNOWN',
+            message: String(message),
+            detail: detail ? String(detail) : '',
+            time: new Date().toLocaleString()
+          });
+          bootSummary.errors = bootSummary.errors.slice(-8);
+          renderErrorBox();
+        }
+
+        function setAgreeLoadingState(loading) {
+          if (!agreeBtn) return;
+          if (loading) {
+            agreeBtn.disabled = true;
+            agreeBtn.style.cursor = 'not-allowed';
+            agreeBtn.style.background = '#8a8f99';
+            agreeBtn.style.opacity = '0.85';
+            if (agreeSpinner) agreeSpinner.style.display = 'inline-block';
+            if (agreeText) agreeText.textContent = '资源加载中，请稍候...';
+            return;
+          }
+          agreeBtn.disabled = false;
+          agreeBtn.style.cursor = 'pointer';
+          agreeBtn.style.background = '#007bff';
+          agreeBtn.style.opacity = '1';
+          if (agreeSpinner) agreeSpinner.style.display = 'none';
+          if (agreeText) agreeText.textContent = '我同意并开始实验';
+        }
+
+        function markDone(stepKey) {
+          if (!stepKey || bootSummary.doneSteps[stepKey]) return;
+          bootSummary.doneSteps[stepKey] = true;
+          refreshProgress();
+        }
+
+        function refreshProgress() {
+          var doneCount = Object.keys(bootSummary.doneSteps).length;
+          var realPercent = Math.round((doneCount / bootSummary.totalSteps) * 100);
+          var shown = realPercent >= 100 ? 100 : Math.max(realPercent, simulatedPercent);
+          if (loadBar) loadBar.style.width = shown + '%';
+          if (loadText) loadText.textContent = shown + '%';
+        }
+
+        function startSimulatedProgress() {
+          if (simulatedTimer) window.clearInterval(simulatedTimer);
+          simulatedPercent = 0;
+          simulatedTimer = window.setInterval(function() {
+            if (ready) return;
+            simulatedPercent = Math.min(14, simulatedPercent + 2);
+            refreshProgress();
+          }, 1000);
+        }
+
+        function stopSimulatedProgress() {
+          if (simulatedTimer) {
+            window.clearInterval(simulatedTimer);
+            simulatedTimer = null;
+          }
+        }
+
+        function timeoutPromise(ms, message) {
+          return new Promise(function(_, reject) {
+            window.setTimeout(function() {
+              reject(new Error(message || '加载超时'));
+            }, ms);
+          });
+        }
+
+        function loadScript(url) {
+          return new Promise(function(resolve, reject) {
+            var script = document.createElement('script');
+            script.src = url;
+            script.async = false;
+            script.onload = function() { resolve(url); };
+            script.onerror = function() { reject(new Error('脚本加载失败: ' + url)); };
+            document.head.appendChild(script);
+          });
+        }
+
+        function loadCss(url) {
+          return new Promise(function(resolve, reject) {
+            var link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = url;
+            link.onload = function() { resolve(url); };
+            link.onerror = function() { reject(new Error('样式加载失败: ' + url)); };
+            document.head.appendChild(link);
+          });
+        }
+
+        async function loadOneDependency(dep) {
+          if (dep.verify && dep.verify()) {
+            markDone(dep.key);
+            return;
+          }
+          var lastErr = null;
+          for (var i = 0; i < dep.urls.length; i += 1) {
+            try {
+              setStatus('正在加载 ' + dep.key + '...');
+              if (dep.type === 'css') {
+                await Promise.race([loadCss(dep.urls[i]), timeoutPromise(12000, dep.key + ' 超时')]);
+              } else {
+                await Promise.race([loadScript(dep.urls[i]), timeoutPromise(12000, dep.key + ' 超时')]);
+              }
+              if (dep.verify && !dep.verify()) {
+                throw new Error(dep.key + ' 已加载但未通过功能校验');
+              }
+              markDone(dep.key);
+              return;
+            } catch (err) {
+              lastErr = err;
+            }
+          }
+          throw lastErr || new Error(dep.key + ' 加载失败');
+        }
+
+        function preloadImage(src, key) {
+          return new Promise(function(resolve, reject) {
+            var img = new Image();
+            img.onload = function() {
+              markDone(key);
+              resolve();
+            };
+            img.onerror = function() { reject(new Error('关键资源加载失败: ' + src)); };
+            img.src = src;
+          });
+        }
+
+        async function preloadAssets() {
+          for (var i = 0; i < requiredAssets.length; i += 1) {
+            var name = requiredAssets[i];
+            var src = new URL(name, assetBase).toString();
+            await Promise.race([preloadImage(src, 'asset:' + name), timeoutPromise(12000, '关键资源超时: ' + name)]);
+          }
+        }
+
+        async function importExperimentModule() {
+          setStatus('正在启动实验脚本...');
+          await import('./fv-meta.js?boot=' + String(bootAttempt));
+          if (typeof window.onConsentAccepted !== 'function' || typeof window.submitInfo !== 'function') {
+            throw new Error('实验脚本未完整初始化（入口函数缺失）');
+          }
+          markDone('module:fv-meta');
+        }
+
+        function resetRunState() {
+          ready = false;
+          bootSummary.doneSteps = {};
+          bootSummary.errors = [];
+          renderErrorBox();
+          if (loadBar) loadBar.style.width = '0%';
+          if (loadText) loadText.textContent = '0%';
+          setAgreeLoadingState(true);
+          startSimulatedProgress();
+        }
+
+        async function runBootstrap(manual) {
+          if (bootInProgress || ready) return;
+          bootInProgress = true;
+          bootAttempt += 1;
+          resetRunState();
+          setStatus('正在加载资源（第 ' + bootAttempt + ' 次尝试）...');
+
+          try {
+            for (var i = 0; i < depConfigs.length; i += 1) {
+              await loadOneDependency(depConfigs[i]);
+            }
+            await preloadAssets();
+            await importExperimentModule();
+            ready = true;
+            stopSimulatedProgress();
+            refreshProgress();
+            setStatus('资源加载完成，可以开始实验。');
+            setAgreeLoadingState(false);
+          } catch (err) {
+            var message = err && err.message ? err.message : String(err);
+            addError('ERR_BOOTSTRAP', message, 'attempt=' + bootAttempt);
+            setStatus('加载失败，请点击“重试加载”或截图反馈主试。');
+            setAgreeLoadingState(true);
+            if (!manual && bootAttempt < maxAutoRetries) {
+              var delayMs = Math.pow(2, bootAttempt - 1) * 1000;
+              setStatus('网络不稳定，' + (delayMs / 1000) + ' 秒后自动重试...');
+              window.setTimeout(function() { runBootstrap(false); }, delayMs);
+            }
+          } finally {
+            stopSimulatedProgress();
+            bootInProgress = false;
           }
         }
 
         agreeBtn.onclick = function() {
-          if (agreeBtn.disabled) return;
+          if (agreeBtn.disabled || !ready || started) return;
+          started = true;
+          agreeBtn.disabled = true;
+          agreeBtn.style.cursor = 'not-allowed';
+          agreeBtn.style.background = '#8a8f99';
+          if (agreeText) agreeText.textContent = '正在进入实验...';
           if (typeof window.onConsentAccepted === 'function') {
             window.onConsentAccepted();
           } else {
-            consentModal.style.display = 'none';
-            rootDiv.style.display = '';
+            addError('ERR_CONSENT_HANDLER', '同意后的入口函数不存在', 'window.onConsentAccepted is missing');
+            started = false;
+            setAgreeLoadingState(false);
           }
         };
 
-        var requiredAssets = ['Gabor.png', 'Background1.png', 'Background2.png', 'Background3.png', 'Background4.png'];
-        var assetBase = new URL('./assets/img/', window.location.href);
-
-        // 统一修正关键示例图路径，避免部署路径变化导致 404（例如退化成 /Background1.png）
-        Array.from(document.querySelectorAll('img')).forEach(function(img) {
-          if (!img) return;
-          var raw = img.getAttribute('src') || '';
-          var name = raw.split('/').pop();
-          if (requiredAssets.indexOf(name) >= 0) {
-            img.src = new URL(name, assetBase).toString();
-          }
-        });
-
-        var images = Array.from(document.images || []).filter(function(img) {
-          return img && img.src;
-        });
-
-        // 如果页面中缺失某些关键资源，也主动加入预加载队列，便于诊断进度/404
-        requiredAssets.forEach(function(name) {
-          var exists = images.some(function(img) {
-            return (img.src || '').indexOf('/' + name) >= 0;
+        if (retryBtn) {
+          retryBtn.addEventListener('click', function() {
+            if (bootInProgress) return;
+            setStatus('收到手动重试请求，正在重新加载...');
+            runBootstrap(true);
           });
-          if (!exists) {
-            var probe = new Image();
-            probe.src = new URL(name, assetBase).toString();
-            images.push(probe);
-          }
-        });
-        var total = images.length;
-        var loaded = 0;
-
-        function markLoaded() {
-          loaded += 1;
-          setProgress(loaded, total);
-          if (loaded >= total) {
-            enableAgree();
-          }
         }
 
-        setProgress(0, total);
+        window.addEventListener('error', function(event) {
+          var msg = event && event.message ? event.message : '未知脚本错误';
+          if (isIgnorableError(msg)) return;
+          addError('ERR_WINDOW', msg, event && event.filename ? (event.filename + ':' + event.lineno) : '');
+        }, true);
 
-        if (total === 0) {
-          enableAgree();
-          return;
-        }
-
-        images.forEach(function(img) {
-          if (img.complete) {
-            markLoaded();
-          } else {
-            img.addEventListener('load', markLoaded, { once: true });
-            img.addEventListener('error', function() {
-              console.warn('资源加载失败:', img.src);
-              markLoaded();
-            }, { once: true });
-          }
+        window.addEventListener('unhandledrejection', function(event) {
+          var reason = event && event.reason;
+          var msg = reason && reason.message ? reason.message : String(reason || 'Promise 异常');
+          if (isIgnorableError(msg)) return;
+          addError('ERR_PROMISE', msg, 'unhandledrejection');
         });
+
+        runBootstrap(false);
       });
     </script>
-    <script src="./fv-meta.js" type="module"></script>
   </body>
 </html>

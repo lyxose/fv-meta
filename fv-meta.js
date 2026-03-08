@@ -122,8 +122,7 @@ psychoJS.start({
 
 psychoJS.experimentLogger.setLevel(core.Logger.ServerLevel.INFO);
 
-// 页面加载完成
-document.addEventListener('DOMContentLoaded', function() {
+function initExperimentPage() {
   console.log('📄 页面加载完成');
   
   experimentData.startTime = new Date().toISOString();
@@ -149,7 +148,14 @@ document.addEventListener('DOMContentLoaded', function() {
   setTimeout(() => {
     initDrawingInterface();
   }, 100);
-});
+}
+
+// 兼容动态 import：若 DOM 已就绪则立即执行初始化。
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initExperimentPage);
+} else {
+  initExperimentPage();
+}
 
 function toBeijingISOString(value = Date.now()) {
   const d = value instanceof Date ? value : new Date(value);
