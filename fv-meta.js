@@ -122,6 +122,13 @@ psychoJS.start({
 
 psychoJS.experimentLogger.setLevel(core.Logger.ServerLevel.INFO);
 
+function isLikelyMobileDevice() {
+  const ua = navigator.userAgent || '';
+  return /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua);
+}
+
+const MOBILE_SESSION = isLikelyMobileDevice();
+
 function initExperimentPage() {
   console.log('📄 页面加载完成');
   
@@ -196,13 +203,6 @@ async function hydrateParticipantIdentity() {
     console.warn('自动填充被试编号失败:', error && error.message ? error.message : error);
   }
 }
-
-function isLikelyMobileDevice() {
-  const ua = navigator.userAgent || '';
-  return /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua);
-}
-
-const MOBILE_SESSION = isLikelyMobileDevice();
 
 function getFullscreenElement() {
   return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || null;
@@ -513,7 +513,9 @@ async function handleScreenViolation(reason) {
 
 function setupScreenSecurity() {
   // 尝试自动全屏（多数浏览器会因非手势触发而拒绝）
-  ensurePortraitFullscreen();
+  ensurePortraitFullscreen().catch((e) => {
+    console.warn('⚠️ 初始化全屏保护失败:', e && e.message ? e.message : e);
+  });
 
   // 首次用户交互时再次尝试全屏
   const firstGesture = async () => {
@@ -656,6 +658,27 @@ async function finalizeExperimentAndQuit() {
   setTimeout(() => {
     psychoJS.quit({message: 'Thank you for your patience.', isCompleted: true});
   }, 250);
+}
+
+async function releaseScreenSecurityForFinalize() {
+  screenSecurityArmed = false;
+  fullscreenEntryConfirmed = false;
+  experimentPausedForRecovery = false;
+  pendingViolationWarningReason = '';
+  orientationOutOfRange = false;
+
+  if (pauseOverlayEl) pauseOverlayEl.style.display = 'none';
+  if (orientationMaskEl) orientationMaskEl.style.display = 'none';
+  if (orientationGuardListener) {
+    window.removeEventListener('deviceorientation', orientationGuardListener, true);
+    orientationGuardListener = null;
+  }
+
+  try {
+    await exitFullscreenSafe();
+  } catch (error) {
+    console.warn('退出全屏失败（结束阶段）:', error && error.message ? error.message : error);
+  }
 }
 
 function getCloudCaptureContext() {
@@ -1796,6 +1819,9 @@ async function submitDescriptionAndSave() {
   }
 
   gazeDistributionDescription = text;
+
+  // 行为任务已结束：在进入下载/上传阶段前立即解除全屏与焦点违规监控。
+  await releaseScreenSecurityForFinalize();
   showSavingPage();
 
   try {

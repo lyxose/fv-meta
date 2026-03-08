@@ -5,13 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
     <title>fv-meta [PsychoPy]</title>
     <!-- styles -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery-ui-dist@1.12.1/jquery-ui.min.css">
-    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,600,700&display=swap" rel="stylesheet">
     <style>
       body {
         margin: 0;
         padding: 0;
-        font-family: Arial, sans-serif;
+        font-family: "Noto Sans SC", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Open Sans", Arial, sans-serif;
       }
       #root {
         display: flex;
@@ -717,8 +715,10 @@
           {
             key: 'jquery-css',
             type: 'css',
+            optional: true,
             urls: [
               './lib/vendor/jquery-ui.min.css',
+              './lib/vendor/jquery-ui-1.12.1.min.css',
               'https://cdn.jsdelivr.net/npm/jquery-ui-dist@1.12.1/jquery-ui.min.css',
               'https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css'
             ],
@@ -729,6 +729,7 @@
             type: 'script',
             urls: [
               './lib/vendor/jquery.min.js',
+              './lib/vendor/jquery-3.6.0.min.js',
               'https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js',
               'https://code.jquery.com/jquery-3.6.0.min.js'
             ],
@@ -739,6 +740,7 @@
             type: 'script',
             urls: [
               './lib/vendor/jquery-ui.min.js',
+              './lib/vendor/jquery-ui-1.12.1.min.js',
               'https://cdn.jsdelivr.net/npm/jquery-ui-dist@1.12.1/jquery-ui.min.js',
               'https://code.jquery.com/ui/1.12.1/jquery-ui.min.js'
             ],
@@ -749,6 +751,7 @@
             type: 'script',
             urls: [
               './lib/vendor/preloadjs.min.js',
+              './lib/vendor/preloadjs-1.0.1.min.js',
               'https://cdn.jsdelivr.net/npm/preloadjs@1.0.1/lib/preloadjs.min.js',
               'https://cdnjs.cloudflare.com/ajax/libs/PreloadJS/1.0.1/preloadjs.min.js'
             ],
@@ -884,6 +887,19 @@
           });
         }
 
+        async function canLoadLocalVendor(url) {
+          if (String(url || '').indexOf('./lib/vendor/') !== 0) return true;
+          try {
+            var resp = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+            if (resp.ok) return true;
+            // 某些静态托管不支持 HEAD，交给后续常规加载流程处理。
+            if (resp.status === 405) return true;
+            return false;
+          } catch (_) {
+            return false;
+          }
+        }
+
         async function loadOneDependency(dep) {
           if (dep.verify && dep.verify()) {
             markDone(dep.key);
@@ -892,11 +908,17 @@
           var lastErr = null;
           for (var i = 0; i < dep.urls.length; i += 1) {
             try {
+              var currentUrl = dep.urls[i];
+              var localReady = await canLoadLocalVendor(currentUrl);
+              if (!localReady) {
+                lastErr = new Error('本地依赖不存在，切换到CDN: ' + currentUrl);
+                continue;
+              }
               setStatus('正在加载 ' + dep.key + '...');
               if (dep.type === 'css') {
-                await Promise.race([loadCss(dep.urls[i]), timeoutPromise(12000, dep.key + ' 超时')]);
+                await Promise.race([loadCss(currentUrl), timeoutPromise(12000, dep.key + ' 超时')]);
               } else {
-                await Promise.race([loadScript(dep.urls[i]), timeoutPromise(12000, dep.key + ' 超时')]);
+                await Promise.race([loadScript(currentUrl), timeoutPromise(12000, dep.key + ' 超时')]);
               }
               if (dep.verify && !dep.verify()) {
                 throw new Error(dep.key + ' 已加载但未通过功能校验');
@@ -906,6 +928,11 @@
             } catch (err) {
               lastErr = err;
             }
+          }
+          if (dep.optional) {
+            addError('WARN_OPTIONAL_DEP', dep.key + ' 加载失败，已降级继续', lastErr && lastErr.message ? lastErr.message : 'unknown');
+            markDone(dep.key);
+            return;
           }
           throw lastErr || new Error(dep.key + ' 加载失败');
         }
