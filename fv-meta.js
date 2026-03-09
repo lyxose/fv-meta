@@ -87,6 +87,12 @@ let hasGyroscope = false;
 let orientationSamples = [];
 let orientationFirstDataAt = 0;
 let orientationDataTimeoutTimer = null;
+let orientationStableTickTimer = null;
+let lastOrientationReading = {
+  beta: null,
+  gamma: null,
+  ts: 0,
+};
 let refreshGuardArmed = false;
 let refreshGuardTouchStartY = null;
 let refreshGuardPullCandidate = false;
@@ -94,6 +100,11 @@ let refreshGuardPullCandidate = false;
 // 姿态阈值统一配置（单位：度）
 const ORIENTATION_TILT_GAMMA_LIMIT_DEG = 10;
 const ORIENTATION_DATA_TIMEOUT_MS = 4000;
+const ORIENTATION_STABLE_REQUIRED_MS = 1500;
+const ORIENTATION_STABLE_TICK_MS = 120;
+const FULLSCREEN_COMPAT_ATTEMPTS = 4;
+const FULLSCREEN_COMPAT_HOLD_MS = 900;
+const FULLSCREEN_COMPAT_RETRY_WAIT_MS = 240;
 
 // 绘制时序记录
 let drawingTimeline = [];
@@ -217,8 +228,13 @@ async function requestFullscreenSafe() {
   if (!el) return false;
   try {
     if (el.requestFullscreen) {
-      await el.requestFullscreen();
-      return true;
+      try {
+        await el.requestFullscreen({ navigationUI: 'hide' });
+        return true;
+      } catch (_) {
+        await el.requestFullscreen();
+        return true;
+      }
     }
     if (el.webkitRequestFullscreen) {
       el.webkitRequestFullscreen();
@@ -232,6 +248,19 @@ async function requestFullscreenSafe() {
     console.warn('⚠️ 全屏请求失败:', e && e.message ? e.message : e);
   }
   return false;
+}
+
+function hasFullscreenApi() {
+  const el = document.documentElement;
+  return !!(el && (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen));
+}
+
+function isPortraitViewport() {
+  return window.innerHeight >= window.innerWidth;
+}
+
+function waitMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function exitFullscreenSafe() {
@@ -274,8 +303,9 @@ async function ensurePortraitFullscreen() {
   }
   if (MOBILE_SESSION) {
     await lockPortraitSafe();
-    if (window.innerWidth > window.innerHeight) {
+    if (!isPortraitViewport()) {
       await new Promise((resolve) => setTimeout(resolve, 120));
+      await lockPortraitSafe();
       if (!isInFullscreen()) {
         await requestFullscreenSafe();
       }
@@ -283,6 +313,42 @@ async function ensurePortraitFullscreen() {
     }
   }
   updateOrientationMask();
+}
+
+async function verifyMobileFullscreenPortraitCompatibility() {
+  if (!MOBILE_SESSION) {
+    return { ok: true, reason: 'non_mobile' };
+  }
+  if (!hasFullscreenApi()) {
+    return { ok: false, reason: 'fullscreen_api_missing' };
+  }
+
+  let stableStart = 0;
+  for (let i = 0; i < FULLSCREEN_COMPAT_ATTEMPTS; i += 1) {
+    await ensurePortraitFullscreen();
+    await waitMs(120);
+
+    const inFs = isInFullscreen();
+    const portrait = isPortraitViewport();
+    const now = Date.now();
+
+    if (inFs && portrait) {
+      if (!stableStart) stableStart = now;
+      if ((now - stableStart) >= FULLSCREEN_COMPAT_HOLD_MS) {
+        return { ok: true, reason: 'ok' };
+      }
+    } else {
+      stableStart = 0;
+    }
+
+    await waitMs(FULLSCREEN_COMPAT_RETRY_WAIT_MS);
+  }
+
+  return {
+    ok: false,
+    reason: 'cannot_hold_portrait_fullscreen',
+    detail: 'fullscreen=' + String(isInFullscreen()) + ', portrait=' + String(isPortraitViewport())
+  };
 }
 
 function ensureOrientationMask() {
@@ -1002,6 +1068,11 @@ function stopOrientationMonitor() {
     clearTimeout(orientationDataTimeoutTimer);
     orientationDataTimeoutTimer = null;
   }
+  if (orientationStableTickTimer) {
+    clearInterval(orientationStableTickTimer);
+    orientationStableTickTimer = null;
+  }
+  lastOrientationReading = { beta: null, gamma: null, ts: 0 };
 }
 
 function startOrientationMonitor() {
@@ -1011,6 +1082,7 @@ function startOrientationMonitor() {
   orientationStableStart = null;
   orientationReady = false;
   orientationFirstDataAt = 0;
+  lastOrientationReading = { beta: null, gamma: null, ts: 0 };
   if (continueBtn) continueBtn.disabled = true;
   if (statusEl) {
     statusEl.textContent = '正在初始化传感器检测，请保持手机屏幕正立，不要左右倾斜。';
@@ -1029,6 +1101,50 @@ function startOrientationMonitor() {
     }
   }, ORIENTATION_DATA_TIMEOUT_MS);
 
+  function evaluateOrientationState(now) {
+    const beta = lastOrientationReading.beta;
+    const gamma = lastOrientationReading.gamma;
+    const portrait = isPortraitViewport();
+    const bottomParallel = gamma !== null && Math.abs(gamma) <= ORIENTATION_TILT_GAMMA_LIMIT_DEG;
+
+    if (portrait && bottomParallel) {
+      if (!orientationStableStart) orientationStableStart = now;
+      const stableMs = now - orientationStableStart;
+      if (statusEl) {
+        if (stableMs < ORIENTATION_STABLE_REQUIRED_MS) {
+          statusEl.textContent = '姿态正确，请继续保持 ' + ((ORIENTATION_STABLE_REQUIRED_MS - stableMs) / 1000).toFixed(1) + ' 秒…';
+        } else {
+          statusEl.textContent = '姿态校准完成，可以开始实验。';
+        }
+      }
+      if (stableMs >= ORIENTATION_STABLE_REQUIRED_MS && !orientationReady) {
+        orientationReady = true;
+        if (continueBtn) continueBtn.disabled = false;
+      }
+    } else {
+      orientationStableStart = null;
+      orientationReady = false;
+      if (continueBtn) continueBtn.disabled = true;
+      if (statusEl && orientationFirstDataAt > 0) {
+        statusEl.textContent = '请不要左右倾斜手机，确保屏幕正立，并让手机底边与桌面边缘大致平行。';
+      }
+    }
+
+    if (valuesEl) {
+      const betaText = beta === null ? '--' : beta.toFixed(1);
+      const gammaText = gamma === null ? '--' : gamma.toFixed(1);
+      valuesEl.textContent = 'β: ' + betaText + '°, γ: ' + gammaText + '°';
+    }
+  }
+
+  if (orientationStableTickTimer) {
+    clearInterval(orientationStableTickTimer);
+  }
+  orientationStableTickTimer = setInterval(() => {
+    if (orientationFirstDataAt <= 0) return;
+    evaluateOrientationState(performance.now());
+  }, ORIENTATION_STABLE_TICK_MS);
+
   orientationListener = function(event) {
     const beta = Number.isFinite(event.beta) ? event.beta : null;
     const gamma = Number.isFinite(event.gamma) ? event.gamma : null;
@@ -1045,39 +1161,9 @@ function startOrientationMonitor() {
         beta: Number(beta.toFixed(2)),
         gamma: Number(gamma.toFixed(2))
       });
+      lastOrientationReading = { beta, gamma, ts: now };
     }
-
-    if (valuesEl) {
-      const betaText = beta === null ? '--' : beta.toFixed(1);
-      const gammaText = gamma === null ? '--' : gamma.toFixed(1);
-      valuesEl.textContent = `β: ${betaText}°, γ: ${gammaText}°`;
-    }
-
-    const portrait = window.innerHeight >= window.innerWidth;
-    const bottomParallel = gamma !== null && Math.abs(gamma) <= ORIENTATION_TILT_GAMMA_LIMIT_DEG;
-
-    if (portrait && bottomParallel) {
-      if (!orientationStableStart) orientationStableStart = now;
-      const stableMs = now - orientationStableStart;
-      if (statusEl) {
-        if (stableMs < 1500) {
-          statusEl.textContent = `姿态正确，请继续保持 ${(1.5 - stableMs / 1000).toFixed(1)} 秒…`;
-        } else {
-          statusEl.textContent = '姿态校准完成，可以开始实验。';
-        }
-      }
-      if (stableMs >= 1500 && !orientationReady) {
-        orientationReady = true;
-        if (continueBtn) continueBtn.disabled = false;
-      }
-    } else {
-      orientationStableStart = null;
-      orientationReady = false;
-      if (continueBtn) continueBtn.disabled = true;
-      if (statusEl && orientationFirstDataAt > 0) {
-        statusEl.textContent = '请不要左右倾斜手机，确保屏幕正立，并让手机底边与桌面边缘大致平行。';
-      }
-    }
+    evaluateOrientationState(now);
   };
 
   window.addEventListener('deviceorientation', orientationListener, true);
@@ -1113,8 +1199,8 @@ async function handleConsentAccepted() {
   const mobile = isLikelyMobileDevice();
   hasGyroscope = mobile ? await checkGyroscopeAvailability() : false;
 
-  if (mobile && orientationPermissionState === 'denied') {
-    await terminateExperiment('姿态传感器权限被拒绝，无法进行姿态校准。请截图并联系主试开放重新打开链接权限，然后在电脑端重启实验。');
+  if (mobile && (orientationPermissionState === 'denied' || !hasGyroscope)) {
+    await terminateExperiment('当前运行环境不支持实验所需的姿态读取能力（或被隐私策略阻止）。请截图并联系主试重新开放链接权限，然后在支持全屏竖屏控制的浏览器中重试。');
     return;
   }
 
@@ -1336,7 +1422,7 @@ function initColorMatrix() {
   }
 }
 
-function startDrawingTask() {
+async function startDrawingTask() {
   const root = document.getElementById('root');
   const instructionPage = document.getElementById('instructionPage');
   const comprehensionCheckPage = document.getElementById('comprehensionCheckPage');
@@ -1347,6 +1433,13 @@ function startDrawingTask() {
   if (instructionPage) instructionPage.style.display = 'none';
   if (comprehensionCheckPage) comprehensionCheckPage.style.display = 'none';
   if (descriptionPage) descriptionPage.style.display = 'none';
+
+  const compat = await verifyMobileFullscreenPortraitCompatibility();
+  if (!compat.ok) {
+    await terminateExperiment('当前浏览器无法稳定维持“竖屏+全屏”实验条件。请截图并联系主试重新开放链接权限，然后改用支持该能力的浏览器重试。detail=' + String(compat.detail || compat.reason));
+    return;
+  }
+
   if (drawingInterface) drawingInterface.style.display = 'block';
   updateOrientationMask();
   
@@ -1362,17 +1455,13 @@ function startDrawingTask() {
   totalDrawingActivityTime = 0;
   activityStartTime = null;
   
-  // 理解检验通过后，进入全屏并启用屏幕安全监控
-  ensurePortraitFullscreen().then(() => {
-    screenSecurityArmed = true;
-    screenSecurityArmAt = Date.now();
-    if (isInFullscreen()) {
-      fullscreenEntryConfirmed = true;
-      fullscreenConfirmedAt = Date.now();
-    }
-  }).catch((err) => {
-    console.warn('进入全屏失败:', err);
-  });
+  // 进入任务前已通过兼容性验证，这里只做状态挂载。
+  screenSecurityArmed = true;
+  screenSecurityArmAt = Date.now();
+  if (isInFullscreen()) {
+    fullscreenEntryConfirmed = true;
+    fullscreenConfirmedAt = Date.now();
+  }
   
   resizeCanvas();
   clearCanvas();
