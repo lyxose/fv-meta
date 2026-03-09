@@ -1016,7 +1016,7 @@
           }
         }
 
-        agreeBtn.onclick = function() {
+        agreeBtn.onclick = async function() {
           if (agreeBtn.disabled || !ready || started) return;
           started = true;
           agreeBtn.disabled = true;
@@ -1024,7 +1024,16 @@
           agreeBtn.style.background = '#8a8f99';
           if (agreeText) agreeText.textContent = '正在进入实验...';
           if (typeof window.onConsentAccepted === 'function') {
-            window.onConsentAccepted();
+            try {
+              var ok = await window.onConsentAccepted();
+              if (!ok) {
+                started = false;
+              }
+            } catch (err) {
+              addError('ERR_CONSENT_HANDLER', err && err.message ? err.message : String(err), 'consent flow failed');
+              started = false;
+              setAgreeLoadingState(false);
+            }
           } else {
             addError('ERR_CONSENT_HANDLER', '同意后的入口函数不存在', 'window.onConsentAccepted is missing');
             started = false;

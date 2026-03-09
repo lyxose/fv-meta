@@ -77,6 +77,8 @@ let fullscreenEntryConfirmed = false; // 仅在确认已进入全屏后才统计
 let screenSecurityArmAt = 0;
 let fullscreenConfirmedAt = 0;
 const fullscreenGuardGraceMs = 1200;
+let fullscreenCompatChecked = false;
+let fullscreenCompatResult = { ok: false, reason: 'not_checked' };
 
 // 姿态/陀螺仪检测
 let orientationListener = null;
@@ -105,6 +107,7 @@ const ORIENTATION_STABLE_TICK_MS = 120;
 const FULLSCREEN_COMPAT_ATTEMPTS = 4;
 const FULLSCREEN_COMPAT_HOLD_MS = 900;
 const FULLSCREEN_COMPAT_RETRY_WAIT_MS = 240;
+const FULLSCREEN_ENTER_WAIT_MS = 700;
 
 // 绘制时序记录
 let drawingTimeline = [];
@@ -224,28 +227,29 @@ function isInFullscreen() {
 }
 
 async function requestFullscreenSafe() {
-  const el = document.documentElement;
-  if (!el) return false;
-  try {
-    if (el.requestFullscreen) {
-      try {
-        await el.requestFullscreen({ navigationUI: 'hide' });
-        return true;
-      } catch (_) {
-        await el.requestFullscreen();
-        return true;
+  const candidates = [document.documentElement, document.body].filter(Boolean);
+  for (let i = 0; i < candidates.length; i += 1) {
+    const el = candidates[i];
+    try {
+      if (el.requestFullscreen) {
+        try {
+          await el.requestFullscreen({ navigationUI: 'hide' });
+        } catch (_) {
+          await el.requestFullscreen();
+        }
+        if (await waitForFullscreenState(true)) return true;
       }
+      if (el.webkitRequestFullscreen) {
+        el.webkitRequestFullscreen();
+        if (await waitForFullscreenState(true)) return true;
+      }
+      if (el.msRequestFullscreen) {
+        el.msRequestFullscreen();
+        if (await waitForFullscreenState(true)) return true;
+      }
+    } catch (e) {
+      console.warn('⚠️ 全屏请求失败:', e && e.message ? e.message : e);
     }
-    if (el.webkitRequestFullscreen) {
-      el.webkitRequestFullscreen();
-      return true;
-    }
-    if (el.msRequestFullscreen) {
-      el.msRequestFullscreen();
-      return true;
-    }
-  } catch (e) {
-    console.warn('⚠️ 全屏请求失败:', e && e.message ? e.message : e);
   }
   return false;
 }
@@ -261,6 +265,41 @@ function isPortraitViewport() {
 
 function waitMs(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function waitForFullscreenState(targetState, timeoutMs = FULLSCREEN_ENTER_WAIT_MS) {
+  return new Promise((resolve) => {
+    if (isInFullscreen() === targetState) {
+      resolve(true);
+      return;
+    }
+    let done = false;
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve(isInFullscreen() === targetState);
+    }, timeoutMs);
+
+    const onChange = () => {
+      if (done) return;
+      if (isInFullscreen() !== targetState) return;
+      done = true;
+      cleanup();
+      resolve(true);
+    };
+
+    function cleanup() {
+      clearTimeout(timer);
+      document.removeEventListener('fullscreenchange', onChange, true);
+      document.removeEventListener('webkitfullscreenchange', onChange, true);
+      document.removeEventListener('MSFullscreenChange', onChange, true);
+    }
+
+    document.addEventListener('fullscreenchange', onChange, true);
+    document.addEventListener('webkitfullscreenchange', onChange, true);
+    document.addEventListener('MSFullscreenChange', onChange, true);
+  });
 }
 
 async function exitFullscreenSafe() {
@@ -286,13 +325,27 @@ async function exitFullscreenSafe() {
 
 async function lockPortraitSafe() {
   if (!MOBILE_SESSION) return true;
+  if (isPortraitViewport()) return true;
   try {
     if (screen.orientation && typeof screen.orientation.lock === 'function') {
       await screen.orientation.lock('portrait');
-      return true;
+      if (isPortraitViewport()) return true;
     }
   } catch (e) {
     console.warn('⚠️ 竖屏锁定失败:', e && e.message ? e.message : e);
+  }
+
+  try {
+    if (typeof screen.lockOrientation === 'function') {
+      screen.lockOrientation('portrait');
+    } else if (typeof screen.mozLockOrientation === 'function') {
+      screen.mozLockOrientation('portrait');
+    } else if (typeof screen.msLockOrientation === 'function') {
+      screen.msLockOrientation('portrait');
+    }
+    if (isPortraitViewport()) return true;
+  } catch (_) {
+    // ignore
   }
   return false;
 }
@@ -326,7 +379,7 @@ async function verifyMobileFullscreenPortraitCompatibility() {
   let stableStart = 0;
   for (let i = 0; i < FULLSCREEN_COMPAT_ATTEMPTS; i += 1) {
     await ensurePortraitFullscreen();
-    await waitMs(120);
+    await waitMs(180);
 
     const inFs = isInFullscreen();
     const portrait = isPortraitViewport();
@@ -1192,16 +1245,27 @@ function showOrientationCheckPage() {
 }
 
 async function handleConsentAccepted() {
+  // 在知情同意阶段即完成能力验证，避免被试后续白做任务。
+  const mobile = isLikelyMobileDevice();
+
+  if (mobile) {
+    const compat = await verifyMobileFullscreenPortraitCompatibility();
+    fullscreenCompatChecked = true;
+    fullscreenCompatResult = compat;
+    if (!compat.ok) {
+      await terminateExperiment('当前浏览器无法稳定维持“竖屏+全屏”实验条件。请截图并联系主试重新开放链接权限，然后改用支持该能力的浏览器重试。detail=' + String(compat.detail || compat.reason));
+      return false;
+    }
+  }
+
   const consentModal = document.getElementById('consentModal');
   if (consentModal) consentModal.style.display = 'none';
 
-  // 不在同意时进入全屏，延迟至理解检验通过后
-  const mobile = isLikelyMobileDevice();
   hasGyroscope = mobile ? await checkGyroscopeAvailability() : false;
 
   if (mobile && (orientationPermissionState === 'denied' || !hasGyroscope)) {
     await terminateExperiment('当前运行环境不支持实验所需的姿态读取能力（或被隐私策略阻止）。请截图并联系主试重新开放链接权限，然后在支持全屏竖屏控制的浏览器中重试。');
-    return;
+    return false;
   }
 
   startOrientationGuardMonitor();
@@ -1217,6 +1281,7 @@ async function handleConsentAccepted() {
   } else {
     showRootEntryPage();
   }
+  return true;
 }
 
 // 提交被试信息
@@ -1434,10 +1499,15 @@ async function startDrawingTask() {
   if (comprehensionCheckPage) comprehensionCheckPage.style.display = 'none';
   if (descriptionPage) descriptionPage.style.display = 'none';
 
-  const compat = await verifyMobileFullscreenPortraitCompatibility();
-  if (!compat.ok) {
-    await terminateExperiment('当前浏览器无法稳定维持“竖屏+全屏”实验条件。请截图并联系主试重新开放链接权限，然后改用支持该能力的浏览器重试。detail=' + String(compat.detail || compat.reason));
-    return;
+  if (MOBILE_SESSION) {
+    if (!fullscreenCompatChecked) {
+      fullscreenCompatResult = await verifyMobileFullscreenPortraitCompatibility();
+      fullscreenCompatChecked = true;
+    }
+    if (!fullscreenCompatResult.ok) {
+      await terminateExperiment('当前浏览器无法稳定维持“竖屏+全屏”实验条件。请截图并联系主试重新开放链接权限，然后改用支持该能力的浏览器重试。detail=' + String(fullscreenCompatResult.detail || fullscreenCompatResult.reason));
+      return;
+    }
   }
 
   if (drawingInterface) drawingInterface.style.display = 'block';
