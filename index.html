@@ -715,6 +715,11 @@
         var ready = false;
         var depMaxRetries = 3;
         var depRetryDelayMs = 700;
+        var assetLoadState = {
+          started: false,
+          promise: null,
+          loaded: {},
+        };
 
         var depConfigs = [
           {
@@ -831,6 +836,23 @@
           });
         }
 
+        function getLoadedAssetCount() {
+          var count = 0;
+          for (var i = 0; i < requiredAssets.length; i += 1) {
+            if (assetLoadState.loaded[requiredAssets[i]]) count += 1;
+          }
+          return count;
+        }
+
+        function syncLoadedAssetsToProgress() {
+          for (var i = 0; i < requiredAssets.length; i += 1) {
+            var name = requiredAssets[i];
+            if (assetLoadState.loaded[name]) {
+              markDone('asset:' + name);
+            }
+          }
+        }
+
         function loadScript(url) {
           return new Promise(function(resolve, reject) {
             var script = document.createElement('script');
@@ -901,13 +923,22 @@
           });
         }
 
-        async function preloadAssets() {
-          for (var i = 0; i < requiredAssets.length; i += 1) {
-            var name = requiredAssets[i];
+        function ensureAssetsPreloading() {
+          if (assetLoadState.promise) return assetLoadState.promise;
+
+          assetLoadState.started = true;
+          setStatus('正在加载图片 0/' + requiredAssets.length + ' ...');
+
+          assetLoadState.promise = Promise.all(requiredAssets.map(function(name) {
             var src = new URL(name, assetBase).toString();
-            setStatus('正在加载图片 ' + (i + 1) + '/' + requiredAssets.length + '：' + name + ' ...');
-            await preloadImage(src, 'asset:' + name);
-          }
+            return preloadImage(src, 'asset:' + name).then(function() {
+              assetLoadState.loaded[name] = true;
+              var loadedCount = getLoadedAssetCount();
+              setStatus('正在加载图片 ' + loadedCount + '/' + requiredAssets.length + '：' + name + ' ...');
+            });
+          }));
+
+          return assetLoadState.promise;
         }
 
         function shouldAutoRefreshAfterFailure(message) {
@@ -934,9 +965,11 @@
           bootSummary.doneSteps = {};
           bootSummary.errors = [];
           renderErrorBox();
+          syncLoadedAssetsToProgress();
           if (loadBar) loadBar.style.width = '0%';
           if (loadText) loadText.textContent = '0%';
           setAgreeLoadingState(true);
+          refreshProgress();
         }
 
         async function runBootstrap(manual) {
@@ -947,10 +980,11 @@
           setStatus('正在加载资源（第 ' + bootAttempt + ' 次尝试）...');
 
           try {
+            var assetsPromise = ensureAssetsPreloading();
             for (var i = 0; i < depConfigs.length; i += 1) {
               await loadOneDependency(depConfigs[i]);
             }
-            await preloadAssets();
+            await assetsPromise;
             await importExperimentModule();
             ready = true;
             refreshProgress();
