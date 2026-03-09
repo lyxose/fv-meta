@@ -715,51 +715,33 @@
         var ready = false;
         var simulatedPercent = 0;
         var simulatedTimer = null;
+        var depMaxRetries = 3;
+        var depRetryDelayMs = 700;
 
         var depConfigs = [
           {
             key: 'jquery-css',
             type: 'css',
             optional: true,
-            urls: [
-              './lib/vendor/jquery-ui.min.css',
-              './lib/vendor/jquery-ui-1.12.1.min.css',
-              'https://cdn.jsdelivr.net/npm/jquery-ui-dist@1.12.1/jquery-ui.min.css',
-              'https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css'
-            ],
+            url: './lib/vendor/jquery-ui-1.12.1.min.css',
             verify: function() { return true; }
           },
           {
             key: 'jquery',
             type: 'script',
-            urls: [
-              './lib/vendor/jquery.min.js',
-              './lib/vendor/jquery-3.6.0.min.js',
-              'https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js',
-              'https://code.jquery.com/jquery-3.6.0.min.js'
-            ],
+            url: './lib/vendor/jquery-3.6.0.min.js',
             verify: function() { return typeof window.jQuery !== 'undefined'; }
           },
           {
             key: 'jquery-ui',
             type: 'script',
-            urls: [
-              './lib/vendor/jquery-ui.min.js',
-              './lib/vendor/jquery-ui-1.12.1.min.js',
-              'https://cdn.jsdelivr.net/npm/jquery-ui-dist@1.12.1/jquery-ui.min.js',
-              'https://code.jquery.com/ui/1.12.1/jquery-ui.min.js'
-            ],
+            url: './lib/vendor/jquery-ui-1.12.1.min.js',
             verify: function() { return !!(window.jQuery && window.jQuery.ui && window.jQuery.ui.dialog); }
           },
           {
             key: 'preloadjs',
             type: 'script',
-            urls: [
-              './lib/vendor/preloadjs.min.js',
-              './lib/vendor/preloadjs-1.0.1.min.js',
-              'https://cdn.jsdelivr.net/npm/preloadjs@1.0.1/lib/preloadjs.min.js',
-              'https://cdnjs.cloudflare.com/ajax/libs/PreloadJS/1.0.1/preloadjs.min.js'
-            ],
+            url: './lib/vendor/preloadjs-1.0.1.min.js',
             verify: function() {
               return !!(window.createjs && (window.createjs.PreloadQueue || window.createjs.LoadQueue));
             }
@@ -870,6 +852,12 @@
           });
         }
 
+        function waitMs(ms) {
+          return new Promise(function(resolve) {
+            window.setTimeout(resolve, ms);
+          });
+        }
+
         function loadScript(url) {
           return new Promise(function(resolve, reject) {
             var script = document.createElement('script');
@@ -892,34 +880,16 @@
           });
         }
 
-        async function canLoadLocalVendor(url) {
-          if (String(url || '').indexOf('./lib/vendor/') !== 0) return true;
-          try {
-            var resp = await fetch(url, { method: 'HEAD', cache: 'no-store' });
-            if (resp.ok) return true;
-            // 某些静态托管不支持 HEAD，交给后续常规加载流程处理。
-            if (resp.status === 405) return true;
-            return false;
-          } catch (_) {
-            return false;
-          }
-        }
-
         async function loadOneDependency(dep) {
           if (dep.verify && dep.verify()) {
             markDone(dep.key);
             return;
           }
+          var currentUrl = dep.url;
           var lastErr = null;
-          for (var i = 0; i < dep.urls.length; i += 1) {
+          for (var attempt = 1; attempt <= depMaxRetries; attempt += 1) {
             try {
-              var currentUrl = dep.urls[i];
-              var localReady = await canLoadLocalVendor(currentUrl);
-              if (!localReady) {
-                lastErr = new Error('本地依赖不存在，切换到CDN: ' + currentUrl);
-                continue;
-              }
-              setStatus('正在加载 ' + dep.key + '...');
+              setStatus('正在加载 ' + dep.key + '（' + attempt + '/' + depMaxRetries + '）...');
               if (dep.type === 'css') {
                 await Promise.race([loadCss(currentUrl), timeoutPromise(12000, dep.key + ' 超时')]);
               } else {
@@ -932,8 +902,12 @@
               return;
             } catch (err) {
               lastErr = err;
+              if (attempt < depMaxRetries) {
+                await waitMs(depRetryDelayMs);
+              }
             }
           }
+
           if (dep.optional) {
             addError('WARN_OPTIONAL_DEP', dep.key + ' 加载失败，已降级继续', lastErr && lastErr.message ? lastErr.message : 'unknown');
             markDone(dep.key);
@@ -1009,6 +983,9 @@
               var delayMs = Math.pow(2, bootAttempt - 1) * 1000;
               setStatus('网络不稳定，' + (delayMs / 1000) + ' 秒后自动重试...');
               window.setTimeout(function() { runBootstrap(false); }, delayMs);
+            } else if (!manual) {
+              setStatus('多次自动重试失败，3 秒后自动刷新页面再试...');
+              window.setTimeout(function() { window.location.reload(); }, 3000);
             }
           } finally {
             stopSimulatedProgress();
