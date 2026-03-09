@@ -227,6 +227,9 @@ function isInFullscreen() {
 }
 
 async function requestFullscreenSafe() {
+  // 手机端禁用全屏 - 仅桌面端触发
+  if (MOBILE_SESSION) return true;
+  
   const candidates = [document.documentElement, document.body].filter(Boolean);
   for (let i = 0; i < candidates.length; i += 1) {
     const el = candidates[i];
@@ -351,56 +354,64 @@ async function lockPortraitSafe() {
 }
 
 async function ensurePortraitFullscreen() {
-  if (!isInFullscreen()) {
+  // 仅桌面端尝试全屏
+  if (!MOBILE_SESSION && !isInFullscreen()) {
     await requestFullscreenSafe();
   }
-  if (MOBILE_SESSION) {
+  // 所有端都尝试竖屏锁定
+  await lockPortraitSafe();
+  if (!isPortraitViewport()) {
+    await new Promise((resolve) => setTimeout(resolve, 120));
     await lockPortraitSafe();
-    if (!isPortraitViewport()) {
-      await new Promise((resolve) => setTimeout(resolve, 120));
-      await lockPortraitSafe();
-      if (!isInFullscreen()) {
-        await requestFullscreenSafe();
-      }
-      await lockPortraitSafe();
-    }
   }
   updateOrientationMask();
 }
 
 async function verifyMobileFullscreenPortraitCompatibility() {
+  // 手机端：仅验证竖屏锁定，不再要求全屏
   if (!MOBILE_SESSION) {
-    return { ok: true, reason: 'non_mobile' };
-  }
-  if (!hasFullscreenApi()) {
-    return { ok: false, reason: 'fullscreen_api_missing' };
-  }
-
-  let stableStart = 0;
-  for (let i = 0; i < FULLSCREEN_COMPAT_ATTEMPTS; i += 1) {
-    await ensurePortraitFullscreen();
-    await waitMs(180);
-
-    const inFs = isInFullscreen();
-    const portrait = isPortraitViewport();
-    const now = Date.now();
-
-    if (inFs && portrait) {
-      if (!stableStart) stableStart = now;
-      if ((now - stableStart) >= FULLSCREEN_COMPAT_HOLD_MS) {
-        return { ok: true, reason: 'ok' };
-      }
-    } else {
-      stableStart = 0;
+    // 桌面端：保持原有全屏验证
+    if (!hasFullscreenApi()) {
+      return { ok: false, reason: 'fullscreen_api_missing' };
     }
 
-    await waitMs(FULLSCREEN_COMPAT_RETRY_WAIT_MS);
-  }
+    let stableStart = 0;
+    for (let i = 0; i < FULLSCREEN_COMPAT_ATTEMPTS; i += 1) {
+      await ensurePortraitFullscreen();
+      await waitMs(180);
 
+      const inFs = isInFullscreen();
+      const portrait = isPortraitViewport();
+      const now = Date.now();
+
+      if (inFs && portrait) {
+        if (!stableStart) stableStart = now;
+        if ((now - stableStart) >= FULLSCREEN_COMPAT_HOLD_MS) {
+          return { ok: true, reason: 'ok' };
+        }
+      } else {
+        stableStart = 0;
+      }
+
+      await waitMs(FULLSCREEN_COMPAT_RETRY_WAIT_MS);
+    }
+
+    return {
+      ok: false,
+      reason: 'cannot_hold_portrait_fullscreen',
+      detail: 'fullscreen=' + String(isInFullscreen()) + ', portrait=' + String(isPortraitViewport())
+    };
+  }
+  
+  // 手机端：只执行竖屏锁定，不再验证全屏
+  const locked = await lockPortraitSafe();
+  if (locked && isPortraitViewport()) {
+    return { ok: true, reason: 'mobile_portrait_locked' };
+  }
   return {
     ok: false,
-    reason: 'cannot_hold_portrait_fullscreen',
-    detail: 'fullscreen=' + String(isInFullscreen()) + ', portrait=' + String(isPortraitViewport())
+    reason: 'mobile_cannot_lock_portrait',
+    detail: 'portrait=' + String(isPortraitViewport())
   };
 }
 
@@ -1253,7 +1264,7 @@ async function handleConsentAccepted() {
     fullscreenCompatChecked = true;
     fullscreenCompatResult = compat;
     if (!compat.ok) {
-      await terminateExperiment('当前浏览器无法稳定维持“竖屏+全屏”实验条件。请截图并联系主试重新开放链接权限，然后改用支持该能力的浏览器重试。detail=' + String(compat.detail || compat.reason));
+      await terminateExperiment('当前浏览器无法锁定竖屏方向。请截图并联系主试，然后改用支持竖屏锁定的浏览器重试。detail=' + String(compat.detail || compat.reason));
       return false;
     }
   }
@@ -1505,7 +1516,7 @@ async function startDrawingTask() {
       fullscreenCompatChecked = true;
     }
     if (!fullscreenCompatResult.ok) {
-      await terminateExperiment('当前浏览器无法稳定维持“竖屏+全屏”实验条件。请截图并联系主试重新开放链接权限，然后改用支持该能力的浏览器重试。detail=' + String(fullscreenCompatResult.detail || fullscreenCompatResult.reason));
+      await terminateExperiment('当前浏览器无法锁定竖屏方向。请截图并联系主试，然后改用支持竖屏锁定的浏览器重试。detail=' + String(fullscreenCompatResult.detail || fullscreenCompatResult.reason));
       return;
     }
   }
