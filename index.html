@@ -713,8 +713,6 @@
         var maxAutoRetries = 3;
         var bootInProgress = false;
         var ready = false;
-        var simulatedPercent = 0;
-        var simulatedTimer = null;
         var depMaxRetries = 3;
         var depRetryDelayMs = 700;
 
@@ -822,34 +820,9 @@
         function refreshProgress() {
           var doneCount = Object.keys(bootSummary.doneSteps).length;
           var realPercent = Math.round((doneCount / bootSummary.totalSteps) * 100);
-          var shown = realPercent >= 100 ? 100 : Math.max(realPercent, simulatedPercent);
+          var shown = realPercent > 100 ? 100 : realPercent;
           if (loadBar) loadBar.style.width = shown + '%';
           if (loadText) loadText.textContent = shown + '%';
-        }
-
-        function startSimulatedProgress() {
-          if (simulatedTimer) window.clearInterval(simulatedTimer);
-          simulatedPercent = 0;
-          simulatedTimer = window.setInterval(function() {
-            if (ready) return;
-            simulatedPercent = Math.min(14, simulatedPercent + 2);
-            refreshProgress();
-          }, 1000);
-        }
-
-        function stopSimulatedProgress() {
-          if (simulatedTimer) {
-            window.clearInterval(simulatedTimer);
-            simulatedTimer = null;
-          }
-        }
-
-        function timeoutPromise(ms, message) {
-          return new Promise(function(_, reject) {
-            window.setTimeout(function() {
-              reject(new Error(message || '加载超时'));
-            }, ms);
-          });
         }
 
         function waitMs(ms) {
@@ -891,9 +864,9 @@
             try {
               setStatus('正在加载 ' + dep.key + '（' + attempt + '/' + depMaxRetries + '）...');
               if (dep.type === 'css') {
-                await Promise.race([loadCss(currentUrl), timeoutPromise(12000, dep.key + ' 超时')]);
+                await loadCss(currentUrl);
               } else {
-                await Promise.race([loadScript(currentUrl), timeoutPromise(12000, dep.key + ' 超时')]);
+                await loadScript(currentUrl);
               }
               if (dep.verify && !dep.verify()) {
                 throw new Error(dep.key + ' 已加载但未通过功能校验');
@@ -932,8 +905,19 @@
           for (var i = 0; i < requiredAssets.length; i += 1) {
             var name = requiredAssets[i];
             var src = new URL(name, assetBase).toString();
-            await Promise.race([preloadImage(src, 'asset:' + name), timeoutPromise(12000, '关键资源超时: ' + name)]);
+            setStatus('正在加载图片 ' + (i + 1) + '/' + requiredAssets.length + '：' + name + ' ...');
+            await preloadImage(src, 'asset:' + name);
           }
+        }
+
+        function shouldAutoRefreshAfterFailure(message) {
+          var text = String(message || '');
+          if (text.indexOf('脚本加载失败:') >= 0) return true;
+          if (text.indexOf('样式加载失败:') >= 0) return true;
+          if (text.indexOf('关键资源加载失败:') >= 0) return true;
+          if (text.indexOf('Failed to fetch') >= 0) return true;
+          if (text.indexOf('NetworkError') >= 0) return true;
+          return false;
         }
 
         async function importExperimentModule() {
@@ -953,7 +937,6 @@
           if (loadBar) loadBar.style.width = '0%';
           if (loadText) loadText.textContent = '0%';
           setAgreeLoadingState(true);
-          startSimulatedProgress();
         }
 
         async function runBootstrap(manual) {
@@ -970,12 +953,12 @@
             await preloadAssets();
             await importExperimentModule();
             ready = true;
-            stopSimulatedProgress();
             refreshProgress();
             setStatus('资源加载完成，可以开始实验。');
             setAgreeLoadingState(false);
           } catch (err) {
             var message = err && err.message ? err.message : String(err);
+            var requestFailed = shouldAutoRefreshAfterFailure(message);
             addError('ERR_BOOTSTRAP', message, 'attempt=' + bootAttempt);
             setStatus('加载失败，请点击“重试加载”或截图反馈主试。');
             setAgreeLoadingState(true);
@@ -983,12 +966,13 @@
               var delayMs = Math.pow(2, bootAttempt - 1) * 1000;
               setStatus('网络不稳定，' + (delayMs / 1000) + ' 秒后自动重试...');
               window.setTimeout(function() { runBootstrap(false); }, delayMs);
-            } else if (!manual) {
+            } else if (!manual && requestFailed) {
               setStatus('多次自动重试失败，3 秒后自动刷新页面再试...');
               window.setTimeout(function() { window.location.reload(); }, 3000);
+            } else if (!manual) {
+              setStatus('多次自动重试失败。检测到非请求失败（可能仍在下载或执行中），已停止自动刷新，请点击“重试加载”。');
             }
           } finally {
-            stopSimulatedProgress();
             bootInProgress = false;
           }
         }
